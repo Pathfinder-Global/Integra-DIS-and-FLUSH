@@ -1,0 +1,3112 @@
+// Decompiled with JetBrains decompiler
+// Type: prjDataImportService.Library
+// Assembly: DataImportService, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null
+// MVID: FB487223-1423-42CE-9C45-22CBA9958D47
+// Assembly location: D:\new ouput\DIS6\DIS6_AIRP\DIS6_AIRP.exe
+
+using Collections;
+using MongoDB.Bson;
+using MongoDB.Driver;
+using MongoDB.Driver.Builders;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using PPSecurity;
+using SevenZip;
+using System;
+using System.Collections.Generic;
+using System.Configuration;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Web.Script.Serialization;
+
+#nullable disable
+namespace prjDataImportService;
+
+public static class Library
+{
+  private static MongoServerSettings settings;
+  private static MongoServer server;
+  private static MongoDatabase MonDatabase;
+  private static string strSiteId;
+  private static string strSiteName;
+  private static string _strPath;
+  private static string _strFinishedPath;
+  private static string _strErrorPath;
+  private static string _strSiteId = "";
+  private static string _strSiteName = "";
+  private static string _strDBName = "";
+  private static string strErrorFile = "";
+  private static string strStatusFile = "";
+  private static bool bimportStatus = true;
+  private static string _strItemName = "";
+  private static string _strItemRate = "0";
+  private static string _strItemQty = "1";
+  private static string brandid;
+  private static string _strfileExtension = "";
+  private static string _strConnectionString = "";
+  private static string _strVersion = "1";
+  private static string strPrimaryDataCaptureType = "";
+  private static string strSecondaryDataCaptureType = "";
+  private static string _strTenantID = "";
+  private static string _strFileNamewithPath = "";
+  private static string _strFileName = "";
+  private static string _strDataFlowType;
+  private static string sNeedItemDetails;
+  private static string _strCollectionName;
+  private static string _strItemCollectionName;
+  private static string _strFrxItemCollectionName;
+  private static string _strPaymentCollectionName;
+  private static string _strPrimaryDataCaptureType;
+  private static string _strSecondaryDataCaptureType;
+  private static List<KeyValuePair<string, string>> lstparams = new List<KeyValuePair<string, string>>();
+  private static string sapplyUpsert;
+  private static string strFilefrequency;
+  private static string strFilesize;
+  private static string strFiletimestamp;
+  private static int strfreq = 0;
+
+  public static void WriteLog(string strMessage)
+  {
+    try
+    {
+      StreamWriter streamWriter = new StreamWriter(AppDomain.CurrentDomain.BaseDirectory + "\\LogFile.txt", true);
+      streamWriter.WriteLine($"{DateTime.Now.ToString()}: {strMessage}");
+      streamWriter.Flush();
+      streamWriter.Close();
+    }
+    catch
+    {
+    }
+  }
+
+  public static void WriteLog(string strFile, string strMessage)
+  {
+    try
+    {
+      StreamWriter streamWriter = new StreamWriter($"{Library._strPath}\\{strFile}", true);
+      streamWriter.WriteLine($"{DateTime.Now.ToString("dd/MMM/yy HH:mm:ss")}: {strMessage}");
+      streamWriter.Flush();
+      streamWriter.Close();
+    }
+    catch
+    {
+    }
+  }
+
+  private static void createFolder(string sfolder)
+  {
+    if (Directory.Exists(sfolder))
+      return;
+    Directory.CreateDirectory(sfolder);
+  }
+
+  private static bool connectDB()
+  {
+    bool flag = true;
+    try
+    {
+      Library.createFolder(AppDomain.CurrentDomain.BaseDirectory + "\\ErrorLog");
+      Library.createFolder(AppDomain.CurrentDomain.BaseDirectory + "\\StatusLog");
+      DateTime now = DateTime.Now;
+      Library.strErrorFile = $"ErrorLog\\ErrorLog_{now.ToString("ddMMMyy")}.txt";
+      now = DateTime.Now;
+      Library.strStatusFile = $"StatusLog\\StatusLog_{now.ToString("ddMMMyy")}.txt";
+      string directoryName = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
+      string str1 = "settings.txt";
+      if (!File.Exists($"{directoryName}\\{str1}"))
+      {
+        Library.WriteLog(Library.strErrorFile, directoryName + " ***********  setting file not found.");
+        flag = false;
+      }
+      Settings settings = new JavaScriptSerializer().Deserialize<Settings>(Security.Decrypt(File.ReadAllLines($"{directoryName}\\{str1}")[0]));
+      string databaseName = Convert.ToString(settings.DataBase);
+      string str2 = Convert.ToString(settings.FileFtpPath).Trim();
+      string connectionString = settings.ConnectionString;
+      Library._strSiteId = settings.SiteId;
+      Library._strSiteName = Convert.ToString(settings.SiteName).Trim();
+      Library._strDBName = databaseName;
+      Library._strPath = str2;
+      Library._strFinishedPath = Library._strPath + "\\ADSRHistory";
+      Library.createFolder(Library._strFinishedPath);
+      Library._strErrorPath = Library._strPath + "\\ADSRErrorFiles";
+      Library.createFolder(Library._strErrorPath);
+      Library.server = new MongoClient(connectionString).GetServer();
+      Library.server.Connect();
+      Library.MonDatabase = Library.server.GetDatabase(databaseName);
+    }
+    catch (Exception ex)
+    {
+      Library.WriteLog(Library.strErrorFile, "Could not Connect to DB. Contact Administrator. " + ex.ToString());
+      flag = false;
+    }
+    return flag;
+  }
+
+  private static bool connectDBOld()
+  {
+    bool flag = true;
+    try
+    {
+      Library.createFolder(AppDomain.CurrentDomain.BaseDirectory + "\\ErrorLog");
+      Library.createFolder(AppDomain.CurrentDomain.BaseDirectory + "\\StatusLog");
+      DateTime now = DateTime.Now;
+      Library.strErrorFile = $"ErrorLog\\ErrorLog_{now.ToString("ddMMMyy")}.txt";
+      now = DateTime.Now;
+      Library.strStatusFile = $"StatusLog\\StatusLog_{now.ToString("ddMMMyy")}.txt";
+      string directoryName = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
+      string str1 = "settings.txt";
+      if (!File.Exists($"{directoryName}\\{str1}"))
+      {
+        Library.WriteLog(Library.strErrorFile, directoryName + " ***********  setting file not found.");
+        flag = false;
+      }
+      Settings settings = new JavaScriptSerializer().Deserialize<Settings>(Security.Decrypt(File.ReadAllLines($"{directoryName}\\{str1}")[0]));
+      Convert.ToString(settings.DataBase);
+      string str2 = ConfigurationManager.AppSettings["SourceFilesPath"].ToString();
+      string databaseName = ConfigurationManager.AppSettings["MongoDBName"].ToString();
+      Library._strfileExtension = ConfigurationManager.AppSettings["Extension"].ToString();
+      string connectionString = ConfigurationManager.AppSettings["ConnectionString"].ToString();
+      Library._strSiteId = ConfigurationManager.AppSettings["SiteCode"].ToString();
+      Library._strSiteName = Convert.ToString(settings.SiteName).Trim();
+      Library._strDBName = databaseName;
+      Library._strPath = str2;
+      Library._strFinishedPath = Library._strPath + "\\ADSRHistory";
+      Library.createFolder(Library._strFinishedPath);
+      Library._strErrorPath = Library._strPath + "\\ADSRErrorFiles";
+      Library.createFolder(Library._strErrorPath);
+      Library.server = new MongoClient(connectionString).GetServer();
+      Library.server.Connect();
+      Library.MonDatabase = Library.server.GetDatabase(databaseName);
+    }
+    catch (Exception ex)
+    {
+      Library.WriteLog(Library.strErrorFile, "Could not Connect to DB. Contact Administrator. " + ex.ToString());
+      flag = false;
+    }
+    return flag;
+  }
+
+  private static bool connectDBNew(string connectionString)
+  {
+    bool flag = true;
+    try
+    {
+      Library.server = new MongoClient(connectionString).GetServer();
+      Library.server.Connect();
+      Library.MonDatabase = Library.server.GetDatabase(Library._strDBName);
+    }
+    catch (Exception ex)
+    {
+      Library.WriteLog(Library.strErrorFile, "Could not Connect to DB. Contact Administrator. " + ex.ToString());
+      flag = false;
+    }
+    return flag;
+  }
+
+  private static bool loadSettings()
+  {
+    string directoryName = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
+    string str1 = "settings.txt";
+    if (!File.Exists($"{directoryName}\\{str1}"))
+    {
+      Library.WriteLog("Log", directoryName + " ***********  setting file not found.");
+      return false;
+    }
+    Settings settings = new JavaScriptSerializer().Deserialize<Settings>(Security.Decrypt(File.ReadAllLines($"{directoryName}\\{str1}")[0]));
+    string str2 = Convert.ToString(settings.DataBase);
+    string str3 = Convert.ToString(settings.FileFtpPath).Trim();
+    Library._strConnectionString = settings.ConnectionString;
+    Library._strSiteId = settings.SiteId;
+    Library._strSiteName = Convert.ToString(settings.SiteName).Trim();
+    Library._strDBName = str2;
+    Library._strPath = str3;
+    Library._strFinishedPath = $"{Library._strPath}\\ADSRHistory_{DateTime.Now.ToString("MMMyy")}";
+    Library.createFolder(Library._strFinishedPath);
+    Library._strErrorPath = $"{Library._strPath}\\ADSRErrorFiles_{DateTime.Now.ToString("MMMyy")}";
+    Library.createFolder(Library._strErrorPath);
+    Library.createFolder($"{Library._strPath}\\ErrorLog_{DateTime.Now.ToString("MMMyy")}");
+    string strPath = Library._strPath;
+    DateTime now = DateTime.Now;
+    string str4 = now.ToString("MMMyy");
+    Library.createFolder($"{strPath}\\StatusLog_{str4}");
+    string str5 = ConfigurationManager.AppSettings["FolderReadOrder"].ToString();
+    string[] strArray1 = new string[7];
+    strArray1[0] = "ErrorLog_";
+    string[] strArray2 = strArray1;
+    now = DateTime.Now;
+    string str6 = now.ToString("MMMyy");
+    strArray2[1] = str6;
+    strArray1[2] = "\\";
+    strArray1[3] = str5;
+    strArray1[4] = "ID_ErrorLog_";
+    string[] strArray3 = strArray1;
+    now = DateTime.Now;
+    string str7 = now.ToString("ddMMMyy");
+    strArray3[5] = str7;
+    strArray1[6] = ".txt";
+    Library.strErrorFile = string.Concat(strArray1);
+    string[] strArray4 = new string[7];
+    strArray4[0] = "StatusLog_";
+    string[] strArray5 = strArray4;
+    now = DateTime.Now;
+    string str8 = now.ToString("MMMyy");
+    strArray5[1] = str8;
+    strArray4[2] = "\\";
+    strArray4[3] = str5;
+    strArray4[4] = "ID_StatusLog_";
+    string[] strArray6 = strArray4;
+    now = DateTime.Now;
+    string str9 = now.ToString("ddMMMyy");
+    strArray6[5] = str9;
+    strArray4[6] = ".txt";
+    Library.strStatusFile = string.Concat(strArray4);
+    Library._strVersion = ConfigurationManager.AppSettings["Version"].ToString();
+    return true;
+  }
+
+  public static void updateData()
+  {
+    BsonDefaults.GuidRepresentation = GuidRepresentation.Standard;
+    try
+    {
+      Library.sapplyUpsert = ConfigurationManager.AppSettings["ApplyUpsert"].ToString();
+      if (!Library.loadSettings())
+        return;
+      Library.importProcess();
+    }
+    catch (Exception ex)
+    {
+      Library.WriteLogtoDB("", "Intra", "COMMON", 0, 0, new int[1], "-NA-", 0, 0, 0.0, 0.0, "Error", "LoadSettings:" + ex.Message, "-NA-", "Database", "-NA-", "-NA-");
+      Library.WriteLog("Log", "err :" + ex.Message);
+    }
+  }
+
+  private static void importProcess()
+  {
+    string[] array1 = ((IEnumerable<string>) Directory.GetDirectories(Library._strPath)).OrderBy<string, string>((Func<string, string>) (o => new DirectoryInfo(o).Name)).ToArray<string>();
+    string str1 = "";
+    string str2 = "";
+    string str3 = ConfigurationManager.AppSettings["NeedItemData"].ToString();
+    string str4 = ConfigurationManager.AppSettings["FolderReadOrder"].ToString();
+    Library._strTenantID = "";
+    if (str4.Trim() == "D")
+      array1 = ((IEnumerable<string>) Directory.GetDirectories(Library._strPath)).OrderByDescending<string, string>((Func<string, string>) (o => new DirectoryInfo(o).Name)).ToArray<string>();
+    try
+    {
+      foreach (string path1 in array1)
+      {
+        Thread.Sleep(20);
+        if (!path1.Contains("ADSR") && !path1.Contains("ErrorLog") && !path1.Contains("StatusLog"))
+        {
+          string sfolder = Library._strFinishedPath + path1.Replace(Library._strPath, "");
+          Library.createFolder(sfolder);
+          string[] allowedExtensions = new string[4]
+          {
+            ".txt",
+            ".zip",
+            ".rar",
+            ".7z"
+          };
+          string[] strArray1 = new string[3]
+          {
+            "PPI",
+            "PPP",
+            "PPH"
+          };
+          string[] array2 = ((IEnumerable<string>) Directory.GetFiles(path1)).Where<string>((Func<string, bool>) (file => ((IEnumerable<string>) allowedExtensions).Any<string>(new Func<string, bool>(file.ToLower().EndsWith)))).OrderBy<string, DateTime>((Func<string, DateTime>) (x => new FileInfo(x).LastWriteTime)).ToArray<string>();
+          if (array2.Length > 0)
+          {
+            if (Library.server != null && Library.server.State == MongoServerState.Connected)
+              Library.MonDatabase.Server.Disconnect();
+            if (!Library.connectDBNew(Library._strConnectionString))
+            {
+              Library.WriteLog(Library.strStatusFile, $"Connection failure Folder:{path1.ToString()} file count:{array2.Length.ToString()}");
+              break;
+            }
+          }
+          foreach (string str5 in array2)
+          {
+            try
+            {
+              Library._strTenantID = "";
+              Thread.Sleep(10);
+              if (Library.server.State == MongoServerState.Disconnected)
+              {
+                Library.MonDatabase.Server.Disconnect();
+                Library.server.Connect();
+                Library.MonDatabase = Library.server.GetDatabase(Library._strDBName);
+              }
+              FileInfo fileInfo = new FileInfo(str5);
+              string str6 = fileInfo.Length.ToString() + " bytes";
+              str1 = fileInfo.Name.ToString();
+              string[] strArray2 = str1.Split('_');
+              string str7 = strArray2[1];
+              string str8 = strArray2[0];
+              if (!(str8 == "PPE"))
+              {
+                Library.WriteLog(Library.strStatusFile, "Process Started for the file:" + str5);
+                string s = "";
+                Library._strfileExtension = Path.GetExtension(str5).Replace(".", "");
+                string[] source1 = new string[3]
+                {
+                  "ZIP",
+                  "RAR",
+                  "7Z"
+                };
+                if (Library._strfileExtension.ToUpper() == "TXT")
+                  s = Security.Decrypt(File.ReadAllLines(str5)[0]);
+                else if (((IEnumerable<string>) source1).Any<string>(new Func<string, bool>(Library._strfileExtension.ToUpper().EndsWith)))
+                {
+                  SevenZipBase.SetLibraryPath(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? Environment.CurrentDirectory, "7z64.dll"));
+                  using (SevenZipExtractor sevenZipExtractor = new SevenZipExtractor(str5, "adsr"))
+                  {
+                    string path2 = Path.GetFileName(str5).Replace(Library._strfileExtension, "txt");
+                    string str9 = Path.Combine(Path.GetDirectoryName(str5), "tmpFiles");
+                    if (!Directory.Exists(str9))
+                      Directory.CreateDirectory(str9);
+                    sevenZipExtractor.ExtractArchive(str9);
+                    string path3 = Path.Combine(str9, path2);
+                    if (File.Exists(path3))
+                    {
+                      string[] strArray3 = File.ReadAllLines(path3);
+                      if (strArray3.Length > 0)
+                      {
+                        s = strArray3[0];
+                      }
+                      else
+                      {
+                        Library.WriteLog(Library.strStatusFile, "0 KB file moved to error folder:--> " + path2);
+                        Library.MoveFile(str5, $"{Library._strErrorPath}\\{Path.GetFileName(str5)}");
+                        File.Delete(path3);
+                        continue;
+                      }
+                    }
+                    else
+                      path3 = path3.Replace(".txt", ".json");
+                    s = File.ReadAllText(path3);
+                    File.Delete(path3);
+                    if (s.Length <= 0)
+                    {
+                      Library.WriteLog(Library.strStatusFile, "0 KB file moved to error folder:--> " + path2);
+                      Library.MoveFile(str5, $"{Library._strErrorPath}\\{Path.GetFileName(str5)}");
+                      continue;
+                    }
+                  }
+                }
+                else
+                {
+                  Library.WriteLog(Library.strStatusFile, "Invalid Zip File Format");
+                  return;
+                }
+                JObject jobject = (JObject) JToken.ReadFrom((JsonReader) new JsonTextReader((TextReader) new StringReader(s)));
+                fileObject fo1 = new fileObject();
+                fileObject_frx fo2 = new fileObject_frx();
+                fileObject_lounge fol = new fileObject_lounge();
+                IntegraAgentDetails iad = new IntegraAgentDetails();
+                if (str8 == "PPL")
+                {
+                  fol = jobject.ToObject<fileObject_lounge>();
+                  Library._strTenantID = fol.Header.TENANT_ID.Trim();
+                  if (fol.Header.GetType().GetProperty("FREQUENCY") != (PropertyInfo) null)
+                    Library.strfreq = fol.Header.FREQUENCY;
+                  iad.FILE_CR_DT = Convert.ToInt32(fol.Header.FILE_CR_DT);
+                  iad.FILE_CR_TM = Convert.ToInt32(fol.Header.FILE_CR_TM);
+                  iad.TENANT_ID = fol.Header.TENANT_ID;
+                  if (fol.Header.GetType().GetProperty("Agent_Name") != (PropertyInfo) null && fol.Header.Agent_Name != null)
+                  {
+                    iad.AGENT_NAME = fol.Header.Agent_Name;
+                    iad.DATA_TRANSFER_MODE = "FILE";
+                    iad.PORTFOLIO_CODE = fol.Header.Portfolio_code;
+                    iad.RELEASE_NO = fol.Header.Release_No;
+                    iad.SITE_ID = fol.Header.Site_ID;
+                    iad.ACTIVE_STATUS = 0;
+                    Library.updateagentdetails(iad);
+                  }
+                  Library.strFiletimestamp = fol.Header.FILE_CR_DT + fol.Header.FILE_CR_TM;
+                }
+                else if (str7 == "F")
+                {
+                  fo2 = jobject.ToObject<fileObject_frx>();
+                  Library._strTenantID = fo2.Header.TENANT_ID.Trim();
+                  if (fo2.Header.GetType().GetProperty("FREQUENCY") != (PropertyInfo) null)
+                    Library.strfreq = fo2.Header.FREQUENCY;
+                  iad.FILE_CR_DT = Convert.ToInt32(fo2.Header.FILE_CR_DT);
+                  iad.FILE_CR_TM = Convert.ToInt32(fo2.Header.FILE_CR_TM);
+                  iad.TENANT_ID = fo2.Header.TENANT_ID;
+                  if (fo2.Header.GetType().GetProperty("Agent_Name") != (PropertyInfo) null && fo2.Header.Agent_Name != null)
+                  {
+                    iad.AGENT_NAME = fo2.Header.Agent_Name;
+                    iad.DATA_TRANSFER_MODE = "FILE";
+                    iad.PORTFOLIO_CODE = fo2.Header.Portfolio_code;
+                    iad.RELEASE_NO = fo2.Header.Release_No;
+                    iad.SITE_ID = fo2.Header.Site_ID;
+                    iad.ACTIVE_STATUS = 0;
+                    Library.updateagentdetails(iad);
+                  }
+                  Library.strFiletimestamp = fo2.Header.FILE_CR_DT + fo2.Header.FILE_CR_TM;
+                }
+                else
+                {
+                  fo1 = jobject.ToObject<fileObject>();
+                  Library._strTenantID = fo1.Header.TENANT_ID.Trim();
+                  if (fo1.Header.GetType().GetProperty("FREQUENCY") != (PropertyInfo) null)
+                    Library.strfreq = fo1.Header.FREQUENCY;
+                  iad.FILE_CR_DT = Convert.ToInt32(fo1.Header.FILE_CR_DT);
+                  iad.FILE_CR_TM = Convert.ToInt32(fo1.Header.FILE_CR_TM);
+                  iad.TENANT_ID = fo1.Header.TENANT_ID;
+                  if (fo1.Header.GetType().GetProperty("Agent_Name") != (PropertyInfo) null && fo1.Header.Agent_Name != null)
+                  {
+                    iad.AGENT_NAME = fo1.Header.Agent_Name;
+                    iad.DATA_TRANSFER_MODE = "FILE";
+                    iad.PORTFOLIO_CODE = fo1.Header.Portfolio_code;
+                    iad.RELEASE_NO = fo1.Header.Release_No;
+                    iad.SITE_ID = fo1.Header.Site_ID;
+                    iad.ACTIVE_STATUS = 0;
+                    Library.updateagentdetails(iad);
+                  }
+                  Library.strFiletimestamp = fo1.Header.FILE_CR_DT + fo1.Header.FILE_CR_TM;
+                }
+                Library.updatesynctracker("File Received", Library.strFiletimestamp, Library.strfreq, str1);
+                bool flag1 = false;
+                bool flag2 = false;
+                bool flag3 = false;
+                FileInfoDetails fid = new FileInfoDetails();
+                if (str8 == "PPI")
+                {
+                  Library._strCollectionName = "ID_TransactionDetails";
+                  Library._strItemCollectionName = "ID_ItemDetails";
+                  Library._strPaymentCollectionName = "ID_PaymentDetails";
+                  Library._strFrxItemCollectionName = "ID_Frx_ItemDetails";
+                }
+                else if (str8 == "PPE")
+                {
+                  Library._strCollectionName = "EOD_TransactionDetails";
+                  Library._strItemCollectionName = "EOD_ItemDetails";
+                  Library._strPaymentCollectionName = "EOD_PaymentDetails";
+                  Library._strFrxItemCollectionName = "EOD_Frx_ItemDetails";
+                }
+                else if (str8 == "PPP")
+                {
+                  Library._strCollectionName = "PP_TransactionDetails";
+                  Library._strItemCollectionName = "PP_ItemDetails";
+                  Library._strPaymentCollectionName = "PP_PaymentDetails";
+                  Library._strFrxItemCollectionName = "PP_Frx_ItemDetails";
+                }
+                else if (str8 == "PPH")
+                {
+                  Library._strCollectionName = "PUSH_TransactionDetails";
+                  Library._strItemCollectionName = "PUSH_ItemDetails";
+                  Library._strPaymentCollectionName = "PUSH_PaymentDetails";
+                  Library._strFrxItemCollectionName = "PUSH_Frx_ItemDetails";
+                }
+                else if (str8 == "PPL")
+                  Library._strCollectionName = "LoungeDetails";
+                bool flag4;
+                if (str8 == "PPE")
+                {
+                  flag4 = Library.MonDatabase.GetCollection("EOD_TransactionDetails").Exists();
+                  flag1 = Library.MonDatabase.GetCollection("EOD_ItemDetails").Exists();
+                  flag3 = Library.MonDatabase.GetCollection("EOD_PaymentDetails").Exists();
+                }
+                else if (str8 == "PPL")
+                {
+                  flag4 = Library.MonDatabase.GetCollection("LoungeDetails").Exists();
+                }
+                else
+                {
+                  flag4 = Library.MonDatabase.GetCollection("TransactionDetails").Exists();
+                  flag1 = Library.MonDatabase.GetCollection("ItemDetails").Exists();
+                  flag2 = Library.MonDatabase.GetCollection("FrxItemDetails").Exists();
+                  flag3 = Library.MonDatabase.GetCollection("PaymentDetails").Exists();
+                }
+                fid.NoOfRowsInserted = 0;
+                fid.TotInvoiceAmtInserted = 0.0;
+                if (flag4)
+                {
+                  MongoCursor<BsonDocument> source2 = Library.MonDatabase.GetCollection("TenantLeaseInfo").FindAs<BsonDocument>(Query.And(Query.EQ("TENANT_ID", (BsonValue) Library._strTenantID), Query.EQ("Service_Site_ID", (BsonValue) Library._strSiteId)));
+                  source2.SetFields((IMongoFields) Fields.Include("BrandId"));
+                  List<BsonDocument> list = source2.ToList<BsonDocument>();
+                  if (list.Count<BsonDocument>() <= 0)
+                  {
+                    Library.WriteLog(Library.strStatusFile, $"Reading File:{str5} Tenant ID:{Library._strTenantID} does not exists");
+                    Library.MoveFile(str5, $"{Library._strErrorPath}\\{str1}");
+                    str2 = Library._strErrorPath.Replace(Library._strPath, "").Replace("\\", "/");
+                    continue;
+                  }
+                  Library.brandid = list.FirstOrDefault<BsonDocument>().GetValue("BrandId").ToString();
+                }
+                else if (str8 == "PPL")
+                {
+                  fid.NoOfRowsInserted = Convert.ToInt32(fol.Footer.NO_OF_RECORDS.ToString());
+                  fid.TotInvoiceAmtInserted = Convert.ToDouble(fol.Footer.HASH_TOTAL.ToString());
+                }
+                else
+                {
+                  MongoCursor<BsonDocument> source3 = Library.MonDatabase.GetCollection("TenantLeaseInfo").FindAs<BsonDocument>(Query.EQ("TENANT_ID", (BsonValue) Library._strTenantID));
+                  source3.SetFields((IMongoFields) Fields.Include("BrandId"));
+                  Library.brandid = source3.ToList<BsonDocument>().FirstOrDefault<BsonDocument>().GetValue("BrandId").ToString();
+                  if (str7 == "F")
+                  {
+                    fid.NoOfRowsInserted = Convert.ToInt32(fo2.Footer.NO_OF_RECORDS.ToString());
+                    fid.TotInvoiceAmtInserted = Convert.ToDouble(fo2.Footer.HASH_TOTAL.ToString());
+                  }
+                  else
+                  {
+                    fid.NoOfRowsInserted = Convert.ToInt32(fo1.Footer.NO_OF_RECORDS.ToString());
+                    fid.TotInvoiceAmtInserted = Convert.ToDouble(fo1.Footer.HASH_TOTAL.ToString());
+                  }
+                }
+                Library.strPrimaryDataCaptureType = "";
+                Library.strSecondaryDataCaptureType = "";
+                Library.GetDatacaptureType(Library._strTenantID);
+                Library.lstparams = new List<KeyValuePair<string, string>>();
+                Library.lstparams.Add(new KeyValuePair<string, string>("TenantId", Library._strTenantID));
+                Library.lstparams.Add(new KeyValuePair<string, string>("DataFlowType", str8));
+                Library.lstparams.Add(new KeyValuePair<string, string>("File", str5));
+                Library.lstparams.Add(new KeyValuePair<string, string>("FileName", str1));
+                Library.lstparams.Add(new KeyValuePair<string, string>("NeedItemDetails", str3));
+                Library.lstparams.Add(new KeyValuePair<string, string>("CollectionName", Library._strCollectionName));
+                Library.lstparams.Add(new KeyValuePair<string, string>("ItemCollectionName", Library._strItemCollectionName));
+                Library.lstparams.Add(new KeyValuePair<string, string>("FrxItemCollectionName", Library._strFrxItemCollectionName));
+                Library.lstparams.Add(new KeyValuePair<string, string>("PaymentCollectionName", Library._strPaymentCollectionName));
+                Library.lstparams.Add(new KeyValuePair<string, string>("PrimaryDataCaptureType", Library.strPrimaryDataCaptureType));
+                Library.lstparams.Add(new KeyValuePair<string, string>("SecondaryDataCaptureType", Library.strSecondaryDataCaptureType));
+                Library.lstparams.Add(new KeyValuePair<string, string>("FrxItemCollectionName", Library._strFrxItemCollectionName));
+                Library.lstparams.Add(new KeyValuePair<string, string>("FileSize", str6));
+                if (str8 != "PPL")
+                  Library.bimportStatus = !(str7 == "F") ? Library.updateintra(fo1, fid) : Library.updatefrxintra(fo2, fid);
+                else if (str8 == "PPL")
+                  Library.bimportStatus = Library.updatelounge(Library._strTenantID, fol, str1, fid);
+                if (Library.bimportStatus)
+                {
+                  str2 = sfolder.Replace(Library._strPath, "").Replace("\\", "/");
+                  if (!(str8 != "PPL"))
+                    ;
+                  Library.MoveFile(str5, $"{sfolder}\\{str1}");
+                  Library.WriteLog(Library.strStatusFile, "Process Completed for the file:" + str1);
+                }
+                else
+                {
+                  Library.MoveFile(str5, $"{Library._strErrorPath}\\{str1}");
+                  Library.WriteLog(Library.strStatusFile, "Error Occured for the file:" + str1);
+                }
+                Library.MonDatabase.Server.Disconnect();
+              }
+            }
+            catch (Exception ex)
+            {
+              str2 = Library._strErrorPath.Replace(Library._strPath, "").Replace("\\", "/");
+              if (!ex.Message.Contains("Invalid archive") && !ex.Message.Contains("SevenZipSharp") && !ex.Message.Contains("open/read error"))
+              {
+                if (!ex.Message.Contains("The process cannot access the file"))
+                {
+                  if (!ex.Message.Contains("Padding is invalid"))
+                  {
+                    str2 = Library._strErrorPath.Replace(Library._strPath, "").Replace("\\", "/");
+                    Library.WriteLog(Library.strStatusFile, $"Error2 Occured for the file:{str1} ==>{ex.Message}");
+                    Library.MoveFile(str5, $"{Library._strErrorPath}\\{str1}");
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    catch (Exception ex)
+    {
+      Library.WriteLogtoDB("", "Intra", "COMMON", 0, 0, new int[1], "-NA-", 0, 0, 0.0, 0.0, "Error", "Error-" + ex.Message, "InComplete", "FileFormat", "-NA-", "-NA-");
+      Library.WriteLog(Library.strErrorFile, "Error Occured:" + ex.ToString());
+    }
+  }
+
+  private static void MoveFile(string source, string target)
+  {
+    if (!File.Exists(source))
+      return;
+    if (File.Exists(target))
+      File.Delete(target);
+    try
+    {
+      File.Copy(source, target, true);
+    }
+    catch (Exception ex)
+    {
+      Library.WriteLog(Library.strStatusFile, " File Move Err:" + ex.Message);
+    }
+    File.Delete(source);
+  }
+
+  private static int GetWeeknumber(string strReceiptDate)
+  {
+    DateTime time = new DateTime((int) Convert.ToInt16(strReceiptDate.Substring(0, 4)), (int) Convert.ToInt16(strReceiptDate.Substring(4, 2)), (int) Convert.ToInt16(strReceiptDate.Substring(6, 2)));
+    Calendar calendar = DateTimeFormatInfo.CurrentInfo.Calendar;
+    return CultureInfo.CurrentCulture.Calendar.GetWeekOfYear(time, CalendarWeekRule.FirstFourDayWeek, DayOfWeek.Monday);
+  }
+
+  private static int GetWeekYear(string strReceiptDate)
+  {
+    int int16_1 = (int) Convert.ToInt16(strReceiptDate.Substring(0, 4));
+    int int16_2 = (int) Convert.ToInt16(strReceiptDate.Substring(4, 2));
+    int int16_3 = (int) Convert.ToInt16(strReceiptDate.Substring(6, 2));
+    DateTime time = new DateTime(int16_1, int16_2, int16_3);
+    Calendar calendar = DateTimeFormatInfo.CurrentInfo.Calendar;
+    int weekOfYear = CultureInfo.CurrentCulture.Calendar.GetWeekOfYear(time, CalendarWeekRule.FirstFourDayWeek, DayOfWeek.Monday);
+    if (weekOfYear == 1 && int16_3 > 28)
+      ++int16_1;
+    if (weekOfYear == 53)
+    {
+      if (int16_3 > 27)
+        ++int16_1;
+      else if (int16_3 < 4)
+        --int16_1;
+    }
+    if (weekOfYear == 52 && int16_3 < 4)
+      --int16_1;
+    return int16_1;
+  }
+
+  public static int GetISOWeekOfYear(string strReceiptDate, out int weekyear)
+  {
+    int int16_1 = (int) Convert.ToInt16(strReceiptDate.Substring(0, 4));
+    int int16_2 = (int) Convert.ToInt16(strReceiptDate.Substring(4, 2));
+    int int16_3 = (int) Convert.ToInt16(strReceiptDate.Substring(6, 2));
+    DateTime time = new DateTime(int16_1, int16_2, int16_3);
+    DayOfWeek dayOfWeek = CultureInfo.InvariantCulture.Calendar.GetDayOfWeek(time);
+    int weekOfYear1 = CultureInfo.InvariantCulture.Calendar.GetWeekOfYear(time, CalendarWeekRule.FirstFourDayWeek, DayOfWeek.Monday);
+    if (dayOfWeek >= DayOfWeek.Monday && dayOfWeek <= DayOfWeek.Wednesday)
+      time = time.AddDays(3.0);
+    int weekOfYear2 = CultureInfo.InvariantCulture.Calendar.GetWeekOfYear(time, CalendarWeekRule.FirstFourDayWeek, DayOfWeek.Monday);
+    if (weekOfYear2 == weekOfYear1 && int16_2 == 1 && int16_3 >= 1 && int16_3 <= 3 && weekOfYear2 > 51)
+      --int16_1;
+    if (weekOfYear2 < weekOfYear1)
+      ++int16_1;
+    weekyear = Convert.ToInt32(int16_1.ToString() + weekOfYear2.ToString("#00"));
+    return weekOfYear2;
+  }
+
+  private static void FilterItemDescription(string _itemdesc)
+  {
+    try
+    {
+      string[] strArray = _itemdesc.Trim().Split(' ');
+      string itemdesc = _itemdesc.Trim();
+      Regex regex = new Regex("^[0-9@]+$");
+      if (strArray.Length > 1)
+      {
+        string input1 = strArray[strArray.Length - 1];
+        string input2 = strArray[strArray.Length - 2];
+        if (regex.IsMatch(input1) && new Regex("^[0-9(]+$").IsMatch(input2))
+        {
+          string str = input1.Replace("@", "");
+          Library._strItemQty = input2.Replace("(", "");
+          Library._strItemRate = str;
+          itemdesc = string.Join(" ", strArray, 0, strArray.Length - 2);
+        }
+      }
+      int starpos = 0;
+      int startIndex1 = Library.AlphaPosition(itemdesc, starpos);
+      Library._strItemName = itemdesc.Substring(startIndex1);
+      if (Library._strItemName.StartsWith("J&B"))
+        return;
+      if (Library._strItemName.StartsWith("<<"))
+        Library._strItemName = Library._strItemName.Replace("<<", "").Replace(">>", "");
+      else if (Library._strItemName.StartsWith("<"))
+      {
+        Library._strItemName = Library._strItemName.Replace("<", "").Replace(">", "");
+      }
+      else
+      {
+        int startIndex2 = Library.RemoveSpecialChars(":", Library._strItemName);
+        Library._strItemName = Library._strItemName.Substring(startIndex2);
+        int startIndex3 = Library.RemoveSpecialChars("$", Library._strItemName);
+        Library._strItemName = Library._strItemName.Substring(startIndex3);
+        int startIndex4 = Library.RemoveSpecialChars("&", Library._strItemName);
+        Library._strItemName = Library._strItemName.Substring(startIndex4);
+        int startIndex5 = Library.RemoveSpecialChars("'", Library._strItemName);
+        Library._strItemName = Library._strItemName.Substring(startIndex5);
+        int startIndex6 = Library.RemoveSpecialChars("!", Library._strItemName);
+        Library._strItemName = Library._strItemName.Substring(startIndex6);
+        int startIndex7 = Library.RemoveSpecialChars("(", Library._strItemName);
+        Library._strItemName = Library._strItemName.Substring(startIndex7);
+        int startIndex8 = Library.RemoveSpecialChars("%", Library._strItemName);
+        Library._strItemName = Library._strItemName.Substring(startIndex8);
+        int startIndex9 = Library.RemoveSpecialChars("#", Library._strItemName);
+        Library._strItemName = Library._strItemName.Substring(startIndex9);
+      }
+    }
+    catch (Exception ex)
+    {
+    }
+  }
+
+  private static int RemoveSpecialChars(string str, string itemdesc)
+  {
+    int starpos = itemdesc.IndexOf(str);
+    int num = 0;
+    if (starpos != -1 && starpos < 6)
+      num = Library.AlphaPosition(itemdesc, starpos);
+    return num;
+  }
+
+  private static int AlphaPosition(string itemdesc, int starpos)
+  {
+    int num = 0;
+    for (int startIndex = starpos; startIndex < itemdesc.Length; ++startIndex)
+    {
+      if (new Regex("^[a-zA-Z]+$").IsMatch(itemdesc.Substring(startIndex, 1)))
+      {
+        num = startIndex;
+        break;
+      }
+    }
+    return num;
+  }
+
+  private static long GetCount(
+    string strDataFlowType,
+    string strTenantID,
+    string strTime,
+    string strTranStatus,
+    string strTemId,
+    int intReceiptDate,
+    string strReceiptNo)
+  {
+    IMongoQuery query1 = Query.And(Query.EQ("SITE_ID", (BsonValue) Library._strSiteId), Query.EQ("TENANT_ID", (BsonValue) strTenantID), Query.EQ("RECEIPT_DATE", (BsonValue) intReceiptDate), Query.EQ("RECEIPT_NO", (BsonValue) strReceiptNo), Query.EQ("RECEIPT_TIME", (BsonValue) strTime), Query.EQ("TRANS_STATUS", (BsonValue) strTranStatus), Query.EQ("TERMINAL_ID", (BsonValue) strTemId));
+    long count = 0;
+    if (strDataFlowType != "PPL")
+    {
+      MongoCursor<BsonDocument> mongoCursor = Library.MonDatabase.GetCollection<BsonDocument>(strDataFlowType).Find(query1);
+      if (mongoCursor != null)
+        count = mongoCursor.Count();
+    }
+    else if (strDataFlowType == "PPL")
+    {
+      IMongoQuery query2 = Query.And(Query.EQ("SITE_ID", (BsonValue) Library._strSiteId), Query.EQ("TENANT_ID", (BsonValue) strTenantID), Query.EQ("RECEIPT_DATE", (BsonValue) intReceiptDate), Query.EQ("RECEIPT_NO", (BsonValue) strReceiptNo), Query.EQ("RECEIPT_TIME", (BsonValue) strTime), Query.EQ("TRAN_STATUS", (BsonValue) strTranStatus), Query.EQ("TERMINAL_ID", (BsonValue) strTemId));
+      MongoCursor<LoungeDetails> mongoCursor = Library.MonDatabase.GetCollection<LoungeDetails>("LoungeDetails").Find(query2);
+      if (mongoCursor != null)
+        count = mongoCursor.Count();
+    }
+    return count;
+  }
+
+  private static int GetActiveStatus(string _strTenantID, int intRecptDt)
+  {
+    int activeStatus = 0;
+    IMongoQuery query = Query.And(Query.EQ("PospatrolId", (BsonValue) _strTenantID), Query.LTE("Date", (BsonValue) intRecptDt));
+    using (List<StatusHistory>.Enumerator enumerator = Library.MonDatabase.GetCollection<StatusHistory>("StatusHistory").Find(query).OrderByDescending<StatusHistory, DateTime>((Func<StatusHistory, DateTime>) (d => d.updated_at)).ToList<StatusHistory>().GetEnumerator())
+    {
+      if (enumerator.MoveNext())
+      {
+        StatusHistory current = enumerator.Current;
+        if (current.Active == 1 || current.Active == 3)
+          activeStatus = 1;
+      }
+    }
+    return activeStatus;
+  }
+
+  private static int GetAuditStatus(string stenantid, int monyr, string sitecode)
+  {
+    int auditStatus = 0;
+    MongoCursor<BsonDocument> source = Library.MonDatabase.GetCollection("AuditStatus").FindAs<BsonDocument>(Query.And(Query.EQ("TENANT_ID", (BsonValue) stenantid), Query.EQ("RECEIPT_MONTH_YEAR", (BsonValue) monyr), Query.EQ("SERVICE_SITE_ID", (BsonValue) sitecode)));
+    source.SetFields((IMongoFields) Fields.Include("AUDIT_STATUS"));
+    List<BsonDocument> list = source.ToList<BsonDocument>();
+    if (list.Count<BsonDocument>() > 0)
+      auditStatus = (int) list.FirstOrDefault<BsonDocument>().GetValue("AUDIT_STATUS");
+    return auditStatus;
+  }
+
+  private static void GetDatacaptureType(string _strTenantID)
+  {
+    MongoCursor<CredentialIssue> source = Library.MonDatabase.GetCollection("CredentialIssue").FindAs<CredentialIssue>(Query.EQ("PospatrolId", (BsonValue) _strTenantID));
+    source.SetFields((IMongoFields) Fields.Include("PrimaryDataCaptureType", "SecondaryDataCaptureType"));
+    List<CredentialIssue> list = source.ToList<CredentialIssue>();
+    Library.strPrimaryDataCaptureType = "";
+    Library.strSecondaryDataCaptureType = "";
+    if (list.Count<CredentialIssue>() <= 0)
+      return;
+    Library.strPrimaryDataCaptureType = list.FirstOrDefault<CredentialIssue>().PrimaryDataCaptureType;
+    Library.strSecondaryDataCaptureType = list.FirstOrDefault<CredentialIssue>().SecondaryDataCaptureType;
+  }
+
+  private static void AssignParamValues()
+  {
+    Library._strTenantID = Library.lstparams.Where<KeyValuePair<string, string>>((Func<KeyValuePair<string, string>, bool>) (k => k.Key == "TenantId")).FirstOrDefault<KeyValuePair<string, string>>().Value;
+    Library._strDataFlowType = Library.lstparams.Where<KeyValuePair<string, string>>((Func<KeyValuePair<string, string>, bool>) (k => k.Key == "DataFlowType")).FirstOrDefault<KeyValuePair<string, string>>().Value;
+    Library._strFileNamewithPath = Library.lstparams.Where<KeyValuePair<string, string>>((Func<KeyValuePair<string, string>, bool>) (k => k.Key == "File")).FirstOrDefault<KeyValuePair<string, string>>().Value;
+    Library.sNeedItemDetails = Library.lstparams.Where<KeyValuePair<string, string>>((Func<KeyValuePair<string, string>, bool>) (k => k.Key == "NeedItemDetails")).FirstOrDefault<KeyValuePair<string, string>>().Value;
+    Library._strCollectionName = Library.lstparams.Where<KeyValuePair<string, string>>((Func<KeyValuePair<string, string>, bool>) (k => k.Key == "CollectionName")).FirstOrDefault<KeyValuePair<string, string>>().Value;
+    Library._strItemCollectionName = Library.lstparams.Where<KeyValuePair<string, string>>((Func<KeyValuePair<string, string>, bool>) (k => k.Key == "ItemCollectionName")).FirstOrDefault<KeyValuePair<string, string>>().Value;
+    Library._strFrxItemCollectionName = Library.lstparams.Where<KeyValuePair<string, string>>((Func<KeyValuePair<string, string>, bool>) (k => k.Key == "FrxItemCollectionName")).FirstOrDefault<KeyValuePair<string, string>>().Value;
+    Library._strPaymentCollectionName = Library.lstparams.Where<KeyValuePair<string, string>>((Func<KeyValuePair<string, string>, bool>) (k => k.Key == "PaymentCollectionName")).FirstOrDefault<KeyValuePair<string, string>>().Value;
+    Library._strPrimaryDataCaptureType = Library.lstparams.Where<KeyValuePair<string, string>>((Func<KeyValuePair<string, string>, bool>) (k => k.Key == "PrimaryDataCaptureType")).FirstOrDefault<KeyValuePair<string, string>>().Value;
+    Library._strSecondaryDataCaptureType = Library.lstparams.Where<KeyValuePair<string, string>>((Func<KeyValuePair<string, string>, bool>) (k => k.Key == "SecondaryDataCaptureType")).FirstOrDefault<KeyValuePair<string, string>>().Value;
+    Library._strFileName = Library.lstparams.Where<KeyValuePair<string, string>>((Func<KeyValuePair<string, string>, bool>) (k => k.Key == "FileName")).FirstOrDefault<KeyValuePair<string, string>>().Value;
+    Library.strFilesize = Library.lstparams.Where<KeyValuePair<string, string>>((Func<KeyValuePair<string, string>, bool>) (k => k.Key == "FileSize")).FirstOrDefault<KeyValuePair<string, string>>().Value;
+    Library.strFilefrequency = Library.lstparams.Where<KeyValuePair<string, string>>((Func<KeyValuePair<string, string>, bool>) (k => k.Key == "FileFrequency")).FirstOrDefault<KeyValuePair<string, string>>().Value;
+  }
+
+  private static bool updateintra(fileObject fo, FileInfoDetails fid)
+  {
+    Library.AssignParamValues();
+    int num1 = 0;
+    double num2 = 0.0;
+    List<BsonDocument> bsonDocumentList1 = new List<BsonDocument>();
+    List<BsonDocument> bsonDocumentList2 = new List<BsonDocument>();
+    List<BsonDocument> bsonDocumentList3 = new List<BsonDocument>();
+    List<TransactionDetails> transactionDetailsList = new List<TransactionDetails>();
+    List<ItemDetails> itemDetailsList = new List<ItemDetails>();
+    List<PaymentDetails> paymentDetailsList = new List<PaymentDetails>();
+    foreach (int num3 in fo.Header.TRANS_DATE)
+    {
+      int trandt = num3;
+      int num4 = trandt;
+      int int32_1 = Convert.ToInt32(num4.ToString().Substring(0, 6).ToString());
+      if (Library.GetAuditStatus(Library._strTenantID, int32_1, Library._strSiteId) == 1)
+      {
+        string strStatusFile = Library.strStatusFile;
+        string fileNamewithPath = Library._strFileNamewithPath;
+        num4 = trandt;
+        string str = num4.ToString();
+        string strMessage = $"Reading File:{fileNamewithPath}; Auditing Completed for the business date:{str}";
+        Library.WriteLog(strStatusFile, strMessage);
+        Library.MoveFile(Library._strFileNamewithPath, $"{Library._strErrorPath}\\{Library._strFileName}");
+      }
+      else
+      {
+        Transactions[] array = ((IEnumerable<Transactions>) fo.Transactions).Where<Transactions>((Func<Transactions, bool>) (s => s.RCPT_DT == trandt)).ToArray<Transactions>();
+        if (((IEnumerable<Transactions>) array).Count<Transactions>() <= 0)
+        {
+          string strStatusFile = Library.strStatusFile;
+          num4 = trandt;
+          string strMessage = "Header Business Date Mismatch for Date:" + num4.ToString();
+          Library.WriteLog(strStatusFile, strMessage);
+        }
+        else
+        {
+          foreach (Transactions tran in array)
+          {
+            DateTime now = DateTime.Now;
+            if (!(tran.TRAN_STATUS.Trim() == "SALES") && !(tran.TRAN_STATUS.Trim() == "RETURN"))
+            {
+              Library.WriteLogtoDB(Library._strDataFlowType, "Intra", Library._strTenantID, Convert.ToInt32(fo.Header.FILE_CR_DT), Convert.ToInt32(fo.Header.FILE_CR_TM), fo.Header.TRANS_DATE, Library._strFileName, 0, 0, 0.0, 0.0, "InvalidData", "Invalid Transaction Status-" + tran.TRAN_STATUS.Trim(), "InProgress", "Import", Library.strFilesize, "-NA-");
+            }
+            else
+            {
+              int int32_2 = Convert.ToInt32(DateTime.Today.ToString("yyyyMMdd"));
+              if (tran.RCPT_DT <= int32_2)
+              {
+                long num5 = 0;
+                int activeStatus = Library.GetActiveStatus(Library._strTenantID, tran.RCPT_DT);
+                num5 = 0L;
+                Regex regex = new Regex("^[0-9.]+$");
+                if (!(tran.RCPT_NUM == ""))
+                {
+                  TransactionDetails document = new TransactionDetails();
+                  document.REC_TYPE = tran.REC_TYPE;
+                  document.TENANT_ID = Library._strTenantID;
+                  document.SITE_ID = Library._strSiteId;
+                  document.LOCATION_CODE = tran.LOCATION_CODE;
+                  document.SHIFT_NO = tran.SHIFT_NO;
+                  document.TERMINAL_ID = tran.TERMINAL_ID;
+                  document.RECEIPT_NO = tran.RCPT_NUM;
+                  document.RECEIPT_DATE = Convert.ToInt32(tran.RCPT_DT);
+                  TransactionDetails transactionDetails1 = document;
+                  num4 = tran.RCPT_DT;
+                  int int32_3 = Convert.ToInt32(num4.ToString().Substring(6, 2).ToString());
+                  transactionDetails1.RECEIPT_DAY = int32_3;
+                  TransactionDetails transactionDetails2 = document;
+                  num4 = tran.RCPT_DT;
+                  int int32_4 = Convert.ToInt32(num4.ToString().Substring(4, 2).ToString());
+                  transactionDetails2.RECEIPT_MONTH = int32_4;
+                  TransactionDetails transactionDetails3 = document;
+                  num4 = tran.RCPT_DT;
+                  int int32_5 = Convert.ToInt32(num4.ToString().Substring(0, 4).ToString());
+                  transactionDetails3.RECEIPT_YEAR = int32_5;
+                  TransactionDetails transactionDetails4 = document;
+                  num4 = tran.RCPT_DT;
+                  int int32_6 = Convert.ToInt32(num4.ToString().Substring(0, 6).ToString());
+                  transactionDetails4.RECEIPT_MONTH_YEAR = int32_6;
+                  document.RECEIPT_TIME = tran.RCPT_TM;
+                  document.RECEIPT_HOUR = Convert.ToInt32(tran.RCPT_TM.ToString().Substring(0, 2).ToString());
+                  document.RECEIPT_MINUTE = Convert.ToInt32(tran.RCPT_TM.ToString().Substring(2, 2).ToString());
+                  document.RECEIPT_SECONDS = Convert.ToInt32(tran.RCPT_TM.ToString().Substring(4, 2).ToString());
+                  int weekyear = document.RECEIPT_YEAR;
+                  TransactionDetails transactionDetails5 = document;
+                  num4 = tran.RCPT_DT;
+                  int isoWeekOfYear1 = Library.GetISOWeekOfYear(num4.ToString(), out weekyear);
+                  transactionDetails5.WEEKNUMBER = isoWeekOfYear1;
+                  document.WEEK_YEAR = weekyear;
+                  document.BUSINESS_DT = tran.BUSINESS_DT;
+                  document.DISCOUNT = Convert.ToDouble(tran.DISCOUNT);
+                  document.TRANS_STATUS = tran.TRAN_STATUS.Trim();
+                  if (tran.TRAN_STATUS.Trim() == "SALES")
+                  {
+                    document.INV_AMT = Convert.ToDouble(tran.INV_AMT);
+                    document.TAX_AMT = Convert.ToDouble(tran.TAX_AMT);
+                    document.NET_SALES = Convert.ToDouble(tran.INV_AMT) - Convert.ToDouble(tran.TAX_AMT);
+                  }
+                  else if (tran.TRAN_STATUS.Trim() == "RETURN")
+                  {
+                    document.RET_AMT = Convert.ToDouble(Convert.ToString(tran.RET_AMT));
+                    document.RET_TAX_AMT = Convert.ToDouble(tran.TAX_AMT);
+                    document.NET_SALES = -1.0 * (Math.Abs(Convert.ToDouble(tran.RET_AMT)) - Convert.ToDouble(tran.TAX_AMT));
+                  }
+                                    if (document.GetType().GetProperty("DINE_IN") != (PropertyInfo)null && tran.GetType().GetProperty("DINE_IN") != (PropertyInfo)null && tran.DINE_IN != null)
+                                        document.DINE_IN = tran.DINE_IN.Trim() == "" ? 0.0 : Convert.ToDouble(tran.DINE_IN);
+                                    if (document.GetType().GetProperty("TAKE_AWAY") != (PropertyInfo)null && tran.GetType().GetProperty("TAKE_AWAY") != (PropertyInfo)null && tran.TAKE_AWAY != null)
+                                        document.TAKE_AWAY = tran.TAKE_AWAY.Trim() == "" ? 0.0 : Convert.ToDouble(tran.TAKE_AWAY);
+                                    if (document.GetType().GetProperty("ONLINE") != (PropertyInfo)null && tran.GetType().GetProperty("ONLINE") != (PropertyInfo)null && tran.ONLINE != null)
+                                        document.ONLINE = tran.ONLINE.Trim() == "" ? 0.0 : Convert.ToDouble(tran.ONLINE);
+                                    if (document.GetType().GetProperty("PRODUCT") != (PropertyInfo)null && tran.GetType().GetProperty("PRODUCT") != (PropertyInfo)null && tran.PRODUCT != null)
+                                        document.PRODUCT = tran.PRODUCT.Trim() == "" ? 0.0 : Convert.ToDouble(tran.PRODUCT);
+                                    if (document.GetType().GetProperty("SERVICE") != (PropertyInfo)null && tran.GetType().GetProperty("SERVICE") != (PropertyInfo)null && tran.SERVICE != null)
+                                        document.SERVICE = tran.SERVICE.Trim() == "" ? 0.0 : Convert.ToDouble(tran.SERVICE);
+                                    if (document.GetType().GetProperty("OTHER_TYPE") != (PropertyInfo)null && tran.GetType().GetProperty("OTHER_TYPE") != (PropertyInfo)null && tran.OTHER_TYPE != null)
+                                        document.OTHER_TYPE = tran.OTHER_TYPE.Trim() == "" ? 0.0 : Convert.ToDouble(tran.OTHER_TYPE);
+                                    if (document.GetType().GetProperty("SERVICECHARGE") != (PropertyInfo) null && tran.GetType().GetProperty("SERCHARGE_AMT") != (PropertyInfo) null && tran.SERCHARGE_AMT != null)
+                    document.SERVICECHARGE = tran.SERCHARGE_AMT.Trim() == "" ? 0.0 : Convert.ToDouble(tran.SERCHARGE_AMT);
+                  document.Operation_Currency = tran.OP_CUR;
+                  document.BaseCurrency_Exchange = !regex.IsMatch(tran.BC_EXCH) ? 1.0 : Convert.ToDouble(tran.BC_EXCH);
+                  document.DataFlowType = Library._strDataFlowType;
+                  document.FileName = Library._strFileName;
+                  document.ACTIVE = activeStatus;
+                  document.BrandId = Library.brandid;
+                  TransactionDetails transactionDetails6 = document;
+                  string strTenantId1 = Library._strTenantID;
+                  num4 = tran.RCPT_DT;
+                  string str1 = num4.ToString();
+                  string rcptNum1 = tran.RCPT_NUM;
+                  string str2 = tran.TRAN_STATUS.Trim();
+                  string str3 = strTenantId1 + str1 + rcptNum1 + str2;
+                  transactionDetails6.TENANT_RECEIPT_ID = str3;
+                  document.CUM_STATUS = 0;
+                  document.updated_at = now;
+                  CustomerDetails customerDetails = new CustomerDetails();
+                  customerDetails.CUST_NAME = tran.CUST_NAME;
+                  customerDetails.CUST_GENDER = tran.CUST_GEN;
+                  customerDetails.CUST_NATION = tran.CUST_NATION;
+                  customerDetails.CUST_EMAIL = tran.CUST_EMAIL;
+                  customerDetails.CUST_CONT = tran.CUST_CONT;
+                  customerDetails.CUST_PP_NO = tran.CUST_PP_NO;
+                  customerDetails.CUST_BP_NO = tran.CUST_BP;
+                  customerDetails.CUST_FL_NO = tran.CUST_FL_NO;
+                  customerDetails.CUST_PAX_TYPE = tran.CUST_PAX_TYPE;
+                  customerDetails.CUST_FL_CLASS = tran.CUST_FL_CLASS;
+                  customerDetails.CUST_BR_GATE_NO = tran.CUST_BR_GATE_NO;
+                  customerDetails.CUST_PNR_NO = tran.CUST_PNR_NO;
+                  customerDetails.CUST_DESTINATION = tran.CUST_DESTINATION;
+                  customerDetails.CUST_ORIGIN = tran.CUST_ORIGIN;
+                  customerDetails.VOUCH_CODE = tran.VOUCH_CODE;
+                  customerDetails.DATE_OF_DEPARTURE = tran.DATE_OF_DEPARTURE;
+                  if (document.GetType().GetProperty("CustomerMobileNo") != (PropertyInfo) null && tran.GetType().GetProperty("CustomerMobileNo") != (PropertyInfo) null && tran.CustomerMobileNo != null)
+                    customerDetails.CustomerMobileNo = tran.CustomerMobileNo.Trim();
+                  if (document.GetType().GetProperty("CustomerID") != (PropertyInfo) null && tran.GetType().GetProperty("CustomerID") != (PropertyInfo) null && tran.CustomerID != null)
+                    customerDetails.CustomerID = tran.CustomerID.Trim();
+                  if (document.GetType().GetProperty("OfferCode") != (PropertyInfo) null && tran.GetType().GetProperty("OfferCode") != (PropertyInfo) null && tran.OfferCode != null)
+                    customerDetails.OfferCode = tran.OfferCode.Trim();
+                  if (document.GetType().GetProperty("GiftVoucherNo") != (PropertyInfo) null && tran.GetType().GetProperty("GiftVoucherNo") != (PropertyInfo) null && tran.GiftVoucherNo != null)
+                    customerDetails.GiftVoucherNo = tran.GiftVoucherNo.Trim();
+                  document.Customer = customerDetails;
+                  int num6 = !(document.GetType().GetProperty("SALESPERSON") != (PropertyInfo) null) ? 1 : (!(tran.GetType().GetProperty("SALESPERSON") != (PropertyInfo) null) ? 1 : 0);
+                  document.SALESPERSON = num6 != 0 ? (string) null : (tran.SALESPERSON == null ? (string) null : tran.SALESPERSON.Trim());
+                  List<BsonDocument> bsonDocumentList4 = new List<BsonDocument>();
+                  bsonDocumentList4.Add(document.ToBsonDocument<TransactionDetails>());
+                  UpdateBuilder update = Update.Set("TENANT_ID", (BsonValue) Library._strTenantID);
+                  update.Set("REC_TYPE", (BsonValue) tran.REC_TYPE);
+                  update.Set("SITE_ID", (BsonValue) Library._strSiteId);
+                  update.Set("LOCATION_CODE", (BsonValue) tran.LOCATION_CODE);
+                  update.Set("SHIFT_NO", (BsonValue) tran.SHIFT_NO);
+                  update.Set("TERMINAL_ID", (BsonValue) tran.TERMINAL_ID);
+                  update.Set("RECEIPT_NO", (BsonValue) tran.RCPT_NUM);
+                  update.Set("RECEIPT_DATE", (BsonValue) Convert.ToInt32(tran.RCPT_DT));
+                  UpdateBuilder updateBuilder1 = update;
+                  num4 = tran.RCPT_DT;
+                  BsonValue int32_7 = (BsonValue) Convert.ToInt32(num4.ToString().Substring(6, 2).ToString());
+                  updateBuilder1.Set("RECEIPT_DAY", int32_7);
+                  UpdateBuilder updateBuilder2 = update;
+                  num4 = tran.RCPT_DT;
+                  BsonValue int32_8 = (BsonValue) Convert.ToInt32(num4.ToString().Substring(4, 2).ToString());
+                  updateBuilder2.Set("RECEIPT_MONTH", int32_8);
+                  UpdateBuilder updateBuilder3 = update;
+                  num4 = tran.RCPT_DT;
+                  BsonValue int32_9 = (BsonValue) Convert.ToInt32(num4.ToString().Substring(0, 4).ToString());
+                  updateBuilder3.Set("RECEIPT_YEAR", int32_9);
+                  UpdateBuilder updateBuilder4 = update;
+                  num4 = tran.RCPT_DT;
+                  BsonValue int32_10 = (BsonValue) Convert.ToInt32(num4.ToString().Substring(0, 6).ToString());
+                  updateBuilder4.Set("RECEIPT_MONTH_YEAR", int32_10);
+                  update.Set("RECEIPT_TIME", (BsonValue) tran.RCPT_TM);
+                  update.Set("RECEIPT_HOUR", (BsonValue) Convert.ToInt32(tran.RCPT_TM.ToString().Substring(0, 2).ToString()));
+                  update.Set("RECEIPT_MINUTE", (BsonValue) Convert.ToInt32(tran.RCPT_TM.ToString().Substring(2, 2).ToString()));
+                  update.Set("RECEIPT_SECONDS", (BsonValue) Convert.ToInt32(tran.RCPT_TM.ToString().Substring(4, 2).ToString()));
+                  UpdateBuilder updateBuilder5 = update;
+                  num4 = tran.RCPT_DT;
+                  BsonValue isoWeekOfYear2 = (BsonValue) Library.GetISOWeekOfYear(num4.ToString(), out weekyear);
+                  updateBuilder5.Set("WEEKNUMBER", isoWeekOfYear2);
+                  update.Set("WEEK_YEAR", (BsonValue) weekyear);
+                  update.Set("BUSINESS_DT", (BsonValue) tran.BUSINESS_DT);
+                  update.Set("DISCOUNT", (BsonValue) Convert.ToDouble(tran.DISCOUNT));
+                  update.Set("TRANS_STATUS", (BsonValue) tran.TRAN_STATUS.Trim());
+                  if (tran.TRAN_STATUS.Trim() == "SALES")
+                  {
+                    update.Set("INV_AMT", (BsonValue) Convert.ToDouble(tran.INV_AMT));
+                    update.Set("TAX_AMT", (BsonValue) Convert.ToDouble(tran.TAX_AMT));
+                    update.Set("NET_SALES", (BsonValue) (Convert.ToDouble(tran.INV_AMT) - Convert.ToDouble(tran.TAX_AMT)));
+                    update.Set("RET_AMT", (BsonValue) Convert.ToDouble(0));
+                    update.Set("RET_TAX_AMT", (BsonValue) Convert.ToDouble(0));
+                  }
+                  else if (tran.TRAN_STATUS.Trim() == "RETURN")
+                  {
+                    update.Set("INV_AMT", (BsonValue) Convert.ToDouble(0));
+                    update.Set("TAX_AMT", (BsonValue) Convert.ToDouble(0));
+                    update.Set("RET_AMT", (BsonValue) Convert.ToDouble(Convert.ToString(tran.RET_AMT)));
+                    update.Set("RET_TAX_AMT", (BsonValue) Convert.ToDouble(tran.TAX_AMT));
+                    update.Set("NET_SALES", (BsonValue) (-1.0 * (Math.Abs(Convert.ToDouble(tran.RET_AMT)) - Convert.ToDouble(tran.TAX_AMT))));
+                  }
+                  if (document.GetType().GetProperty("SERVICECHARGE") != (PropertyInfo) null && tran.GetType().GetProperty("SERCHARGE_AMT") != (PropertyInfo) null)
+                  {
+                    if (tran.SERCHARGE_AMT != null)
+                      update.Set("SERVICECHARGE", (BsonValue) (tran.SERCHARGE_AMT.Trim() == "" ? 0.0 : Convert.ToDouble(tran.SERCHARGE_AMT)));
+                    else
+                      update.Set("SERVICECHARGE", (BsonValue) Convert.ToDouble("0"));
+                  }
+                  else
+                    update.Set("SERVICECHARGE", (BsonValue) Convert.ToDouble("0"));
+                                    if (document.GetType().GetProperty("DINE_IN") != (PropertyInfo)null && tran.GetType().GetProperty("DINE_IN") != (PropertyInfo)null)
+                                    {
+                                        if (tran.DINE_IN != null)
+                                            update.Set("DINE_IN", (BsonValue)(tran.DINE_IN.Trim() == "" ? 0.0 : Convert.ToDouble(tran.DINE_IN)));
+                                        else
+                                            update.Set("DINE_IN", (BsonValue)Convert.ToDouble("0"));
+                                    }
+                                    else
+                                        update.Set("Dine_In", (BsonValue)Convert.ToDouble("0"));
+                                    if (document.GetType().GetProperty("TAKE_AWAY") != (PropertyInfo)null && tran.GetType().GetProperty("TAKE_AWAY") != (PropertyInfo)null)
+                                    {
+                                        if (tran.TAKE_AWAY != null)
+                                            update.Set("TAKE_AWAY", (BsonValue)(tran.TAKE_AWAY.Trim() == "" ? 0.0 : Convert.ToDouble(tran.TAKE_AWAY)));
+                                        else
+                                            update.Set("TAKE_AWAY", (BsonValue)Convert.ToDouble("0"));
+                                    }
+                                    else
+                                        update.Set("TAKE_AWAY", (BsonValue)Convert.ToDouble("0"));
+                                    if (document.GetType().GetProperty("ONLINE") != (PropertyInfo)null && tran.GetType().GetProperty("ONLINE") != (PropertyInfo)null)
+                                    {
+                                        if (tran.ONLINE != null)
+                                            update.Set("ONLINE", (BsonValue)(tran.ONLINE.Trim() == "" ? 0.0 : Convert.ToDouble(tran.ONLINE)));
+                                        else
+                                            update.Set("ONLINE", (BsonValue)Convert.ToDouble("0"));
+                                    }
+                                    else
+                                        update.Set("ONLINE", (BsonValue)Convert.ToDouble("0"));
+                                    if (document.GetType().GetProperty("PRODUCT") != (PropertyInfo)null && tran.GetType().GetProperty("PRODUCT") != (PropertyInfo)null)
+                                    {
+                                        if (tran.PRODUCT != null)
+                                            update.Set("PRODUCT", (BsonValue)(tran.PRODUCT.Trim() == "" ? 0.0 : Convert.ToDouble(tran.PRODUCT)));
+                                        else
+                                            update.Set("PRODUCT", (BsonValue)Convert.ToDouble("0"));
+                                    }
+                                    else
+                                        update.Set("PRODUCT", (BsonValue)Convert.ToDouble("0"));
+                                    if (document.GetType().GetProperty("SERVICE") != (PropertyInfo)null && tran.GetType().GetProperty("SERVICE") != (PropertyInfo)null)
+                                    {
+                                        if (tran.SERVICE != null)
+                                            update.Set("SERVICE", (BsonValue)(tran.SERVICE.Trim() == "" ? 0.0 : Convert.ToDouble(tran.SERVICE)));
+                                        else
+                                            update.Set("SERVICE", (BsonValue)Convert.ToDouble("0"));
+                                    }
+                                    else
+                                        update.Set("SERVICE", (BsonValue)Convert.ToDouble("0"));
+                                    if (document.GetType().GetProperty("OTHER_TYPE") != (PropertyInfo)null && tran.GetType().GetProperty("OTHER_TYPE") != (PropertyInfo)null)
+                                    {
+                                        if (tran.OTHER_TYPE != null)
+                                            update.Set("OTHER_TYPE", (BsonValue)(tran.OTHER_TYPE.Trim() == "" ? 0.0 : Convert.ToDouble(tran.OTHER_TYPE)));
+                                        else
+                                            update.Set("OTHER_TYPE", (BsonValue)Convert.ToDouble("0"));
+                                    }
+                                    else
+                                        update.Set("OTHER_TYPE", (BsonValue)Convert.ToDouble("0"));
+                                    update.Set("Operation_Currency", (BsonValue) tran.OP_CUR);
+                  if (regex.IsMatch(tran.BC_EXCH))
+                    update.Set("BaseCurrency_Exchange", (BsonValue) Convert.ToDouble(tran.BC_EXCH));
+                  else
+                    update.Set("BaseCurrency_Exchange", (BsonValue) 1);
+                  update.Set("DataFlowType", (BsonValue) Library._strDataFlowType);
+                  update.Set("FileName", (BsonValue) Library._strFileName);
+                  update.Set("ACTIVE", (BsonValue) activeStatus);
+                  update.Set("BrandId", (BsonValue) Library.brandid);
+                  UpdateBuilder updateBuilder6 = update;
+                  string strTenantId2 = Library._strTenantID;
+                  num4 = tran.RCPT_DT;
+                  string str4 = num4.ToString();
+                  string rcptNum2 = tran.RCPT_NUM;
+                  string str5 = tran.TRAN_STATUS.Trim();
+                  BsonValue bsonValue = (BsonValue) (strTenantId2 + str4 + rcptNum2 + str5);
+                  updateBuilder6.Set("TENANT_RECEIPT_ID", bsonValue);
+                  update.Set("CUM_STATUS", (BsonValue) 0);
+                  if (tran.GetType().GetProperty("CustomerMobileNo") != (PropertyInfo) null)
+                  {
+                    if (tran.CustomerMobileNo != null)
+                      update.Set("Customer.CustomerMobileNo", (BsonValue) tran.CustomerMobileNo.Trim());
+                    else
+                      update.Set("Customer.CustomerMobileNo", (BsonValue) "");
+                  }
+                  else
+                    update.Set("Customer.CustomerMobileNo", (BsonValue) "");
+                  if (tran.GetType().GetProperty("CustomerID") != (PropertyInfo) null)
+                  {
+                    if (tran.CustomerID != null)
+                      update.Set("Customer.CustomerID", (BsonValue) tran.CustomerID.Trim());
+                    else
+                      update.Set("Customer.CustomerID", (BsonValue) "");
+                  }
+                  else
+                    update.Set("Customer.CustomerID", (BsonValue) "");
+                  if (tran.GetType().GetProperty("OfferCode") != (PropertyInfo) null)
+                  {
+                    if (tran.OfferCode != null)
+                      update.Set("Customer.OfferCode", (BsonValue) tran.OfferCode.Trim());
+                    else
+                      update.Set("Customer.OfferCode", (BsonValue) "");
+                  }
+                  else
+                    update.Set("Customer.OfferCode", (BsonValue) "");
+                  if (tran.GetType().GetProperty("GiftVoucherNo") != (PropertyInfo) null)
+                  {
+                    if (tran.GiftVoucherNo != null)
+                      update.Set("Customer.GiftVoucherNo", (BsonValue) tran.GiftVoucherNo.Trim());
+                    else
+                      update.Set("Customer.GiftVoucherNo", (BsonValue) "");
+                  }
+                  else
+                    update.Set("Customer.GiftVoucherNo", (BsonValue) "");
+                  update.Set("updated_at", (BsonValue) now);
+                  update.Set("Customer.CUST_NAME", (BsonValue) tran.CUST_NAME);
+                  update.Set("Customer.CUST_GENDER", (BsonValue) tran.CUST_GEN);
+                  update.Set("Customer.CUST_NATION", (BsonValue) tran.CUST_NATION);
+                  update.Set("Customer.CUST_EMAIL", (BsonValue) tran.CUST_EMAIL);
+                  update.Set("Customer.CUST_CONT", (BsonValue) tran.CUST_CONT);
+                  update.Set("Customer.CUST_PP_NO", (BsonValue) tran.CUST_PP_NO);
+                  update.Set("Customer.CUST_BP_NO", (BsonValue) tran.CUST_BP);
+                  update.Set("Customer.CUST_FL_NO", (BsonValue) tran.CUST_FL_NO);
+                  update.Set("Customer.CUST_PAX_TYPE", (BsonValue) tran.CUST_PAX_TYPE);
+                  update.Set("Customer.CUST_FL_CLASS", (BsonValue) tran.CUST_FL_CLASS);
+                  update.Set("Customer.CUST_BR_GATE_NO", (BsonValue) tran.CUST_BR_GATE_NO);
+                  update.Set("Customer.CUST_PNR_NO", (BsonValue) tran.CUST_PNR_NO);
+                  update.Set("Customer.CUST_DESTINATION", (BsonValue) tran.CUST_DESTINATION);
+                  update.Set("Customer.CUST_ORIGIN", (BsonValue) tran.CUST_ORIGIN);
+                  update.Set("Customer.VOUCH_CODE", (BsonValue) tran.VOUCH_CODE);
+                  update.Set("Customer.DATE_OF_DEPARTURE", (BsonValue) tran.DATE_OF_DEPARTURE);
+                  if (document.GetType().GetProperty("SALESPERSON") != (PropertyInfo) null && tran.GetType().GetProperty("SALESPERSON") != (PropertyInfo) null)
+                  {
+                    if (tran.SALESPERSON != null)
+                      update.Set("SALESPERSON", (BsonValue) tran.SALESPERSON.Trim());
+                    else
+                      update.Set("SALESPERSON", (BsonValue) "");
+                  }
+                  else
+                    update.Set("SALESPERSON", (BsonValue) "");
+                  List<BsonDocument> documents1 = new List<BsonDocument>();
+                  if (Library.sNeedItemDetails == "1")
+                  {
+                    foreach (ItemDetail itemDetail in tran.ItemDetail)
+                    {
+                      if (!(itemDetail.RCPT_NUM.Trim() == ""))
+                      {
+                        ItemDetails itemDetails = new ItemDetails();
+                        itemDetails.SITE_ID = Library._strSiteId;
+                        itemDetails.TENANT_ID = Library._strTenantID;
+                        itemDetails.POS_TILL = tran.TERMINAL_ID;
+                        itemDetails.REC_TYPE = itemDetail.REC_TYPE;
+                        itemDetails.RECEIPT_NO = itemDetail.RCPT_NUM;
+                        itemDetails.RECEIPT_DATE = Convert.ToInt32(itemDetail.RCPT_DT);
+                        itemDetails.RECEIPT_DAY = Convert.ToInt32(itemDetail.RCPT_DT.Substring(6, 2).ToString());
+                        itemDetails.RECEIPT_MONTH = Convert.ToInt32(itemDetail.RCPT_DT.Substring(4, 2).ToString());
+                        itemDetails.RECEIPT_YEAR = Convert.ToInt32(itemDetail.RCPT_DT.Substring(0, 4).ToString());
+                        itemDetails.RECEIPT_TIME = tran.RCPT_TM;
+                        itemDetails.RECEIPT_HOUR = Convert.ToInt32(tran.RCPT_TM.ToString().Substring(0, 2).ToString());
+                        itemDetails.RECEIPT_MINUTE = Convert.ToInt32(tran.RCPT_TM.ToString().Substring(2, 2).ToString());
+                        itemDetails.RECEIPT_SECONDS = Convert.ToInt32(tran.RCPT_TM.ToString().Substring(4, 2).ToString());
+                        itemDetails.SHIFT_NO = tran.SHIFT_NO;
+                        itemDetails.BUSINESS_DT = tran.BUSINESS_DT;
+                        itemDetails.ITEM_CAT = itemDetail.ITEM_CAT;
+                        itemDetails.ITEM_CODE = itemDetail.ITEM_CODE;
+                        Library._strItemName = itemDetail.ITEM_NAME.Trim();
+                        Library._strItemQty = itemDetail.ITEM_QTY.Trim();
+                        Library._strItemRate = itemDetail.ITEM_PRICE.Trim();
+                        itemDetails.ITEM_NAME = itemDetail.ITEM_NAME;
+                        itemDetails.ITEM_PRICE = Convert.ToDouble(itemDetail.ITEM_PRICE);
+                        itemDetails.ITEM_QTY = Convert.ToDouble(itemDetail.ITEM_QTY);
+                        itemDetails.ITEM_TAX = Convert.ToDouble(itemDetail.ITEM_TAX);
+                        itemDetails.ITEM_NET_AMT = Convert.ToDouble(itemDetail.ITEM_NET_AMT);
+                        itemDetails.BC_EXCH = Convert.ToDouble(itemDetail.BC_EXCH);
+                        itemDetails.ITEM_TAX_TYPE = itemDetail.ITEM_TAX_TYPE;
+                        itemDetails.OP_CUR = itemDetail.OP_CUR;
+                        itemDetails.ITEM_STATUS = itemDetail.ITEM_STATUS;
+                        itemDetails.TENANT_RECEIPT_ID = Library._strTenantID + itemDetail.RCPT_DT.ToString() + itemDetail.RCPT_NUM + itemDetail.ITEM_STATUS;
+                        itemDetails.CUM_STATUS = 0;
+                        itemDetails.updated_at = now;
+                                                if (itemDetails.GetType().GetProperty("ITEM_TAX_RATE") != (PropertyInfo)null && itemDetail.GetType().GetProperty("ITEM_TAX_RATE") != (PropertyInfo)null && itemDetail.ITEM_TAX_RATE != null)
+                                                    itemDetails.ITEM_TAX_RATE = Convert.ToDouble(itemDetail.ITEM_TAX_RATE.Trim());
+                                                if (itemDetails.GetType().GetProperty("DEPARTMENT") != (PropertyInfo) null && itemDetail.GetType().GetProperty("DEPARTMENT") != (PropertyInfo) null && itemDetail.DEPARTMENT != null)
+                          itemDetails.DEPARTMENT = itemDetail.DEPARTMENT.Trim();
+                        if (itemDetails.GetType().GetProperty("HSNCODE") != (PropertyInfo) null && itemDetail.GetType().GetProperty("HSNCODE") != (PropertyInfo) null && itemDetail.HSNCODE != null)
+                          itemDetails.HSNCODE = itemDetail.HSNCODE.Trim();
+                        if (itemDetails.GetType().GetProperty("SALESPERSON") != (PropertyInfo) null && itemDetail.GetType().GetProperty("SALESPERSON") != (PropertyInfo) null && itemDetail.SALESPERSON != null)
+                          itemDetails.SALESPERSON = itemDetail.SALESPERSON.Trim();
+                        if (itemDetails.GetType().GetProperty("SUBCATEGORY") != (PropertyInfo) null && itemDetail.GetType().GetProperty("SUBCATEGORY") != (PropertyInfo) null && itemDetail.SUBCATEGORY != null)
+                          itemDetails.SUBCATEGORY = itemDetail.SUBCATEGORY.Trim();
+                        if (itemDetails.GetType().GetProperty("IN_TIME") != (PropertyInfo) null && itemDetail.GetType().GetProperty("IN_TIME") != (PropertyInfo) null && itemDetail.IN_TIME != null && itemDetail.IN_TIME != "")
+                          itemDetails.IN_TIME = Convert.ToDateTime(itemDetail.IN_TIME.Trim());
+                        if (itemDetails.GetType().GetProperty("OUT_TIME") != (PropertyInfo) null && itemDetail.GetType().GetProperty("OUT_TIME") != (PropertyInfo) null && itemDetail.OUT_TIME != null && itemDetail.OUT_TIME != "")
+                          itemDetails.OUT_TIME = Convert.ToDateTime(itemDetail.OUT_TIME.Trim());
+                        documents1.Add(itemDetails.ToBsonDocument<ItemDetails>());
+                      }
+                    }
+                  }
+                  List<BsonDocument> documents2 = new List<BsonDocument>();
+                  foreach (PaymentDetail paymentDetail in tran.PaymentDetail)
+                  {
+                    if (!(paymentDetail.RCPT_NUM.Trim() == ""))
+                      documents2.Add(new PaymentDetails()
+                      {
+                        SITE_ID = Library._strSiteId,
+                        TENANT_ID = Library._strTenantID,
+                        POS_TILL = tran.TERMINAL_ID,
+                        REC_TYPE = paymentDetail.REC_TYPE,
+                        RECEIPT_NO = paymentDetail.RCPT_NUM,
+                        RECEIPT_DATE = Convert.ToInt32(paymentDetail.RCPT_DT),
+                        RECEIPT_DAY = Convert.ToInt32(paymentDetail.RCPT_DT.Substring(6, 2).ToString()),
+                        RECEIPT_MONTH = Convert.ToInt32(paymentDetail.RCPT_DT.Substring(4, 2).ToString()),
+                        RECEIPT_YEAR = Convert.ToInt32(paymentDetail.RCPT_DT.Substring(0, 4).ToString()),
+                        RECEIPT_TIME = tran.RCPT_TM,
+                        RECEIPT_HOUR = Convert.ToInt32(tran.RCPT_TM.ToString().Substring(0, 2).ToString()),
+                        RECEIPT_MINUTE = Convert.ToInt32(tran.RCPT_TM.ToString().Substring(2, 2).ToString()),
+                        RECEIPT_SECONDS = Convert.ToInt32(tran.RCPT_TM.ToString().Substring(4, 2).ToString()),
+                        SHIFT_NO = tran.SHIFT_NO,
+                        BUSINESS_DT = tran.BUSINESS_DT,
+                        PAYMENT_NAME = paymentDetail.PAYMENT_NAME,
+                        CURRENCY_CODE = paymentDetail.CURRENCY_CODE,
+                        BC_EXCH = (!regex.IsMatch(paymentDetail.BC_EXCH) ? 1.0 : Convert.ToDouble(paymentDetail.BC_EXCH)),
+                        TENDER_AMOUNT = (!regex.IsMatch(paymentDetail.TENDER_AMOUNT) ? 1.0 : Convert.ToDouble(paymentDetail.TENDER_AMOUNT)),
+                        EXCHANGE_RATE = (!regex.IsMatch(paymentDetail.EXCHANGE_RATE) ? 1.0 : Convert.ToDouble(paymentDetail.EXCHANGE_RATE)),
+                        OP_CUR = paymentDetail.OP_CUR,
+                        PAYMENT_STATUS = paymentDetail.PAYMENT_STATUS,
+                        TENANT_RECEIPT_ID = (Library._strTenantID + paymentDetail.RCPT_DT.ToString() + paymentDetail.RCPT_NUM + paymentDetail.PAYMENT_STATUS),
+                        CUM_STATUS = 0,
+                        updated_at = now
+                      }.ToBsonDocument<PaymentDetails>());
+                  }
+                  if (bsonDocumentList4.Count > 0)
+                  {
+                    if (Library.sapplyUpsert != "1")
+                    {
+                      if (Library.strPrimaryDataCaptureType == "Pos Patrol | Integra" && Library._strDataFlowType == "PPI" || Library.strPrimaryDataCaptureType == "Pos Patrol | Push" && Library._strDataFlowType == "PPH" || Library.strPrimaryDataCaptureType == "Pos Patrol | Print" && Library._strDataFlowType == "PPP")
+                      {
+                        IMongoQuery query = Query.And(Query.EQ("SITE_ID", (BsonValue) Library._strSiteId), Query.EQ("TENANT_ID", (BsonValue) Library._strTenantID), Query.EQ("RECEIPT_DATE", (BsonValue) tran.RCPT_DT), Query.EQ("RECEIPT_NO", (BsonValue) tran.RCPT_NUM), Query.EQ("RECEIPT_TIME", (BsonValue) tran.RCPT_TM), Query.EQ("TRANS_STATUS", (BsonValue) tran.TRAN_STATUS), Query.EQ("TERMINAL_ID", (BsonValue) tran.TERMINAL_ID));
+                        try
+                        {
+                          MongoCollection<TransactionDetails> collection = Library.MonDatabase.GetCollection<TransactionDetails>("TransactionDetails");
+                          if (collection.FindOne(query) == null)
+                          {
+                            collection.Insert(document);
+                            collection.Save(document);
+                          }
+                          ++num1;
+                          num2 += Convert.ToDouble(tran.INV_AMT);
+                          if (documents1.Count > 0)
+                          {
+                            try
+                            {
+                              Library.MonDatabase.GetCollection<ItemDetails>("ItemDetails").InsertBatch<BsonDocument>((IEnumerable<BsonDocument>) documents1);
+                            }
+                            catch
+                            {
+                            }
+                          }
+                          if (documents2.Count > 0)
+                          {
+                            try
+                            {
+                              Library.MonDatabase.GetCollection<PaymentDetails>("PaymentDetails").InsertBatch<BsonDocument>((IEnumerable<BsonDocument>) documents2);
+                            }
+                            catch
+                            {
+                            }
+                          }
+                        }
+                        catch (Exception ex)
+                        {
+                          if (!ex.Message.Contains("The _id field cannot be changed from"))
+                            ;
+                          if (!ex.Message.Contains("duplicate key error collection"))
+                            Library.WriteLog(Library.strErrorFile, $"Primary Record:{document.RECEIPT_NO};Error -File:{Library._strFileName}==>{ex.Message.ToString()}");
+                        }
+                      }
+                      try
+                      {
+                        IMongoQuery query = Query.And(Query.EQ("SITE_ID", (BsonValue) Library._strSiteId), Query.EQ("TENANT_ID", (BsonValue) Library._strTenantID), Query.EQ("RECEIPT_DATE", (BsonValue) tran.RCPT_DT), Query.EQ("RECEIPT_NO", (BsonValue) tran.RCPT_NUM), Query.EQ("RECEIPT_TIME", (BsonValue) tran.RCPT_TM), Query.EQ("TRANS_STATUS", (BsonValue) tran.TRAN_STATUS), Query.EQ("TERMINAL_ID", (BsonValue) tran.TERMINAL_ID));
+                        MongoCollection<TransactionDetails> collection = Library.MonDatabase.GetCollection<TransactionDetails>(Library._strCollectionName);
+                        if (collection.FindOne(query) == null)
+                        {
+                          collection.Insert(document);
+                          collection.Save(document);
+                        }
+                        ++num1;
+                        num2 += Convert.ToDouble(tran.INV_AMT);
+                        if (documents1.Count > 0)
+                        {
+                          try
+                          {
+                            Library.MonDatabase.GetCollection<ItemDetails>(Library._strItemCollectionName).InsertBatch<BsonDocument>((IEnumerable<BsonDocument>) documents1);
+                          }
+                          catch
+                          {
+                          }
+                        }
+                        if (documents2.Count > 0)
+                        {
+                          try
+                          {
+                            Library.MonDatabase.GetCollection<PaymentDetails>(Library._strPaymentCollectionName).InsertBatch<BsonDocument>((IEnumerable<BsonDocument>) documents2);
+                          }
+                          catch
+                          {
+                          }
+                        }
+                      }
+                      catch (Exception ex)
+                      {
+                        if (!ex.Message.Contains("The _id field cannot be changed from"))
+                          ;
+                        if (!ex.Message.Contains("duplicate key error collection"))
+                          Library.WriteLog(Library.strErrorFile, $"Sec Record:{document.RECEIPT_NO};Error -File:{Library._strFileName}==>{ex.Message.ToString()}");
+                      }
+                    }
+                    else if (Library.sapplyUpsert == "1")
+                    {
+                      if (Library.strPrimaryDataCaptureType == "Pos Patrol | Integra" && Library._strDataFlowType == "PPI" || Library.strPrimaryDataCaptureType == "Pos Patrol | Push" && Library._strDataFlowType == "PPH" || Library.strPrimaryDataCaptureType == "Pos Patrol | Print" && Library._strDataFlowType == "PPP")
+                      {
+                        IMongoQuery query = Query.And(Query.EQ("SITE_ID", (BsonValue) Library._strSiteId), Query.EQ("TENANT_ID", (BsonValue) Library._strTenantID), Query.EQ("RECEIPT_DATE", (BsonValue) tran.RCPT_DT), Query.EQ("RECEIPT_NO", (BsonValue) tran.RCPT_NUM), Query.EQ("RECEIPT_TIME", (BsonValue) tran.RCPT_TM), Query.EQ("TRANS_STATUS", (BsonValue) tran.TRAN_STATUS), Query.EQ("TERMINAL_ID", (BsonValue) tran.TERMINAL_ID));
+                        try
+                        {
+                          Library.MonDatabase.GetCollection("TransactionDetails").Update(query, (IMongoUpdate) update, UpdateFlags.Upsert);
+                          fid.NoOfRowsInserted = num1;
+                          ++num1;
+                          num2 += Convert.ToDouble(tran.INV_AMT);
+                          fid.TotInvoiceAmtInserted = num2;
+                          if (Library.sNeedItemDetails == "1")
+                            Library.UpsertItemDetails("ItemDetails", (object) tran, Library._strTenantID, now, "NO");
+                          Library.UpsertPaymentDetails(tran.PaymentDetail, tran.RCPT_TM, tran.TERMINAL_ID, tran.SHIFT_NO, tran.BUSINESS_DT, Library._strTenantID, now, "PaymentDetails");
+                        }
+                        catch (Exception ex)
+                        {
+                          if (!ex.Message.Contains("The _id field cannot be changed from"))
+                            ;
+                          if (!ex.Message.Contains("duplicate key error collection"))
+                            Library.WriteLog(Library.strErrorFile, $"Primary Record:{tran.RCPT_NUM};Error -File:{Library._strFileName}==>{ex.Message.ToString()}");
+                        }
+                      }
+                      try
+                      {
+                        IMongoQuery query = Query.And(Query.EQ("SITE_ID", (BsonValue) Library._strSiteId), Query.EQ("TENANT_ID", (BsonValue) Library._strTenantID), Query.EQ("RECEIPT_DATE", (BsonValue) tran.RCPT_DT), Query.EQ("RECEIPT_NO", (BsonValue) tran.RCPT_NUM), Query.EQ("RECEIPT_TIME", (BsonValue) tran.RCPT_TM), Query.EQ("TRANS_STATUS", (BsonValue) tran.TRAN_STATUS), Query.EQ("TERMINAL_ID", (BsonValue) tran.TERMINAL_ID));
+                        Library.MonDatabase.GetCollection(Library._strCollectionName).Update(query, (IMongoUpdate) update, UpdateFlags.Upsert);
+                        fid.NoOfRowsInserted = num1;
+                        ++num1;
+                        num2 += Convert.ToDouble(tran.INV_AMT);
+                        fid.TotInvoiceAmtInserted = num2;
+                        if (Library.sNeedItemDetails == "1")
+                          Library.UpsertItemDetails(Library._strItemCollectionName, (object) tran, Library._strTenantID, now, "NO");
+                        Library.UpsertPaymentDetails(tran.PaymentDetail, tran.RCPT_TM, tran.TERMINAL_ID, tran.SHIFT_NO, tran.BUSINESS_DT, Library._strTenantID, now, Library._strPaymentCollectionName);
+                      }
+                      catch (Exception ex)
+                      {
+                        if (!ex.Message.Contains("The _id field cannot be changed from"))
+                          ;
+                        if (!ex.Message.Contains("duplicate key error collection"))
+                          Library.WriteLog(Library.strErrorFile, $"Sec Record:{tran.RCPT_NUM};Error -File:{Library._strFileName}==>{ex.Message.ToString()}");
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          fid.NoOfRowsInserted = num1;
+          fid.TotInvoiceAmtInserted = num2;
+        }
+      }
+    }
+    string str6 = "";
+    bool flag;
+    try
+    {
+      Library.MonDatabase.GetCollection<FileInfoDetails>("FileInfoDetails").Insert<FileInfoDetails>(fid);
+      string strMessage = "DataImport completed at " + (object) DateTime.Now;
+      Library.WriteLog(Library.strStatusFile, strMessage);
+      flag = true;
+    }
+    catch (Exception ex)
+    {
+      Library._strErrorPath.Replace(Library._strPath, "").Replace("\\", "/");
+      str6 = "Error:" + ex.ToString();
+      Library.WriteLog(Library.strErrorFile, $"Error: Occured for the file:{Library._strFileName}==>{ex.ToString()}");
+      flag = false;
+    }
+    return flag;
+  }
+
+  private static void updatesynctracker(
+    string syncstatus,
+    string filetimestamp,
+    int strfreq,
+    string filename)
+  {
+    DateTime now = DateTime.Now;
+    MongoCursor<DataSyncTracker> source = Library.MonDatabase.GetCollection("DataSyncTracker").FindAs<DataSyncTracker>(Query.And(Query.EQ("TENANT_ID", (BsonValue) Library._strTenantID), Query.EQ("SITE_ID", (BsonValue) Library._strSiteId)));
+    source.SetFields((IMongoFields) Fields.Include("UPDATED_AT"));
+    List<DataSyncTracker> list = source.ToList<DataSyncTracker>();
+    DateTime dateTime;
+    if (list.Count<DataSyncTracker>() > 0)
+      dateTime = list.FirstOrDefault<DataSyncTracker>().UPDATED_AT;
+    else
+      dateTime = Convert.ToDateTime($"{filetimestamp.Substring(0, 4)}-{filetimestamp.Substring(4, 2)}-{filetimestamp.Substring(6, 2)} {filetimestamp.Substring(8, 2)}:{filetimestamp.Substring(10, 2)}:{filetimestamp.Substring(12, 2)}");
+    IMongoQuery query = Query.And(Query.EQ("TENANT_ID", (BsonValue) Library._strTenantID), Query.EQ("SITE_ID", (BsonValue) Library._strSiteId));
+    UpdateBuilder update = Update.Set("TENANT_ID", (BsonValue) Library._strTenantID);
+    update.Set("SITE_ID", (BsonValue) Library._strSiteId);
+    update.Set("FILE_FREQUENCY_MINUTES", (BsonValue) strfreq);
+    update.Set("LAST_FILE_TIMESTAMP", (BsonValue) dateTime);
+    update.Set("LAST_FILE_NAME", (BsonValue) filename);
+    update.Set("FILE_STATUS", (BsonValue) syncstatus);
+    update.Set("UPDATED_AT", (BsonValue) now);
+    Library.MonDatabase.GetCollection("DataSyncTracker").Update(query, (IMongoUpdate) update, UpdateFlags.Upsert);
+  }
+
+  private static void updateagentdetails(IntegraAgentDetails iad)
+  {
+    IMongoQuery query = Query.And(Query.EQ("TENANT_ID", (BsonValue) iad.TENANT_ID), Query.EQ("SITE_ID", (BsonValue) iad.SITE_ID), Query.EQ("RELEASE_NO", (BsonValue) iad.RELEASE_NO));
+    string str = iad.RELEASE_NO.ToString().Substring(0, 8);
+    string reldate = $"{str.Substring(6, 2)}/{str.Substring(4, 2)}/{str.Substring(0, 4)}";
+    MongoCollection<BsonDocument> collection = Library.MonDatabase.GetCollection("IntegraAgentDetails");
+    if (collection.FindOne(query) != (BsonDocument) null)
+      return;
+    iad.updated_at = DateTime.Now;
+    collection.Insert<IntegraAgentDetails>(iad);
+    collection.Save<IntegraAgentDetails>(iad);
+    Library.updatetenant(iad.TENANT_ID, reldate, iad.DATA_TRANSFER_MODE, iad.AGENT_NAME, iad.RELEASE_NO);
+  }
+
+  private static void updatetenant(
+    string stenant,
+    string reldate,
+    string sdtmode,
+    string stool,
+    string sver)
+  {
+    MongoCollection<BsonDocument> collection = Library.MonDatabase.GetCollection("CredentialIssue");
+    IMongoQuery query = Query.And(Query.EQ("PospatrolId", (BsonValue) stenant));
+    if (!(collection.FindOne(query) != (BsonDocument) null))
+      return;
+    UpdateBuilder update = Update.Set("DataTransfer", (BsonValue) sdtmode);
+    update.Set("ToolName", (BsonValue) stool);
+    update.Set("Version", (BsonValue) sver);
+    update.Set("updated_at", (BsonValue) DateTime.Now);
+    update.Set("ReleaseDate", (BsonValue) reldate);
+    Library.MonDatabase.GetCollection("CredentialIssue").Update(query, (IMongoUpdate) update, UpdateFlags.None);
+  }
+
+  private static bool updatefrxintra(fileObject_frx fo, FileInfoDetails fid)
+  {
+    Library.AssignParamValues();
+    int num1 = 0;
+    double num2 = 0.0;
+    List<BsonDocument> bsonDocumentList1 = new List<BsonDocument>();
+    List<BsonDocument> bsonDocumentList2 = new List<BsonDocument>();
+    List<BsonDocument> bsonDocumentList3 = new List<BsonDocument>();
+    List<TransactionDetails> transactionDetailsList = new List<TransactionDetails>();
+    List<FrxItemDetails> frxItemDetailsList = new List<FrxItemDetails>();
+    List<PaymentDetails> paymentDetailsList = new List<PaymentDetails>();
+    foreach (int num3 in fo.Header.TRANS_DATE)
+    {
+      int trandt = num3;
+      int num4 = trandt;
+      int int32_1 = Convert.ToInt32(num4.ToString().Substring(0, 6).ToString());
+      if (Library.GetAuditStatus(Library._strTenantID, int32_1, Library._strSiteId) == 1)
+      {
+        string strStatusFile = Library.strStatusFile;
+        string fileNamewithPath = Library._strFileNamewithPath;
+        num4 = trandt;
+        string str = num4.ToString();
+        string strMessage = $"Reading File:{fileNamewithPath}; Auditing Completed for the business date:{str}";
+        Library.WriteLog(strStatusFile, strMessage);
+        Library.MoveFile(Library._strFileNamewithPath, $"{Library._strErrorPath}\\{Library._strFileName}");
+      }
+      else
+      {
+        FrxTransactions[] array = ((IEnumerable<FrxTransactions>) fo.Transactions).Where<FrxTransactions>((Func<FrxTransactions, bool>) (s => s.RCPT_DT == trandt)).ToArray<FrxTransactions>();
+        if (((IEnumerable<FrxTransactions>) array).Count<FrxTransactions>() <= 0)
+        {
+          string strStatusFile = Library.strStatusFile;
+          num4 = trandt;
+          string strMessage = "Header Business Date Mismatch for Date:" + num4.ToString();
+          Library.WriteLog(strStatusFile, strMessage);
+        }
+        else
+        {
+          foreach (FrxTransactions tran in array)
+          {
+            DateTime now = DateTime.Now;
+            if (!(tran.TRAN_STATUS.Trim() == "SALES") && !(tran.TRAN_STATUS.Trim() == "RETURN"))
+            {
+              Library.WriteLogtoDB(Library._strDataFlowType, "Intra", Library._strTenantID, Convert.ToInt32(fo.Header.FILE_CR_DT), Convert.ToInt32(fo.Header.FILE_CR_TM), fo.Header.TRANS_DATE, Library._strFileName, 0, 0, 0.0, 0.0, "InvalidData", "Invalid Transaction Status-" + tran.TRAN_STATUS.Trim(), "InProgress", "Import", Library.strFilesize, "-NA-");
+            }
+            else
+            {
+              int int32_2 = Convert.ToInt32(DateTime.Today.ToString("yyyyMMdd"));
+              if (tran.RCPT_DT <= int32_2)
+              {
+                long num5 = 0;
+                int activeStatus = Library.GetActiveStatus(Library._strTenantID, tran.RCPT_DT);
+                num5 = 0L;
+                Regex regex = new Regex("^[0-9.]+$");
+                if (!(tran.RCPT_NUM == ""))
+                {
+                  TransactionDetails document = new TransactionDetails();
+                  document.REC_TYPE = tran.REC_TYPE;
+                  document.TENANT_ID = Library._strTenantID;
+                  document.SITE_ID = Library._strSiteId;
+                  document.LOCATION_CODE = tran.LOCATION_CODE;
+                  document.SHIFT_NO = tran.SHIFT_NO;
+                  document.TERMINAL_ID = tran.TERMINAL_ID;
+                  document.RECEIPT_NO = tran.RCPT_NUM;
+                  document.RECEIPT_DATE = Convert.ToInt32(tran.RCPT_DT);
+                  TransactionDetails transactionDetails1 = document;
+                  num4 = tran.RCPT_DT;
+                  int int32_3 = Convert.ToInt32(num4.ToString().Substring(6, 2).ToString());
+                  transactionDetails1.RECEIPT_DAY = int32_3;
+                  TransactionDetails transactionDetails2 = document;
+                  num4 = tran.RCPT_DT;
+                  int int32_4 = Convert.ToInt32(num4.ToString().Substring(4, 2).ToString());
+                  transactionDetails2.RECEIPT_MONTH = int32_4;
+                  TransactionDetails transactionDetails3 = document;
+                  num4 = tran.RCPT_DT;
+                  int int32_5 = Convert.ToInt32(num4.ToString().Substring(0, 4).ToString());
+                  transactionDetails3.RECEIPT_YEAR = int32_5;
+                  TransactionDetails transactionDetails4 = document;
+                  num4 = tran.RCPT_DT;
+                  int int32_6 = Convert.ToInt32(num4.ToString().Substring(0, 6).ToString());
+                  transactionDetails4.RECEIPT_MONTH_YEAR = int32_6;
+                  document.RECEIPT_TIME = tran.RCPT_TM;
+                  document.RECEIPT_HOUR = Convert.ToInt32(tran.RCPT_TM.ToString().Substring(0, 2).ToString());
+                  document.RECEIPT_MINUTE = Convert.ToInt32(tran.RCPT_TM.ToString().Substring(2, 2).ToString());
+                  document.RECEIPT_SECONDS = Convert.ToInt32(tran.RCPT_TM.ToString().Substring(4, 2).ToString());
+                  int weekyear = document.RECEIPT_YEAR;
+                  TransactionDetails transactionDetails5 = document;
+                  num4 = tran.RCPT_DT;
+                  int isoWeekOfYear1 = Library.GetISOWeekOfYear(num4.ToString(), out weekyear);
+                  transactionDetails5.WEEKNUMBER = isoWeekOfYear1;
+                  document.WEEK_YEAR = weekyear;
+                  document.BUSINESS_DT = tran.BUSINESS_DT;
+                  document.DISCOUNT = Convert.ToDouble(tran.DISCOUNT);
+                  document.TRANS_STATUS = tran.TRAN_STATUS.Trim();
+                  if (tran.TRAN_STATUS.Trim() == "SALES")
+                  {
+                    document.INV_AMT = Convert.ToDouble(tran.INV_AMT);
+                    document.TAX_AMT = Convert.ToDouble(tran.TAX_AMT);
+                    document.NET_SALES = Convert.ToDouble(tran.INV_AMT) - Convert.ToDouble(tran.TAX_AMT);
+                  }
+                  else if (tran.TRAN_STATUS.Trim() == "RETURN")
+                  {
+                    document.RET_AMT = Convert.ToDouble(Convert.ToString(tran.RET_AMT));
+                    document.RET_TAX_AMT = Convert.ToDouble(tran.TAX_AMT);
+                    document.NET_SALES = -1.0 * (Math.Abs(Convert.ToDouble(tran.RET_AMT)) - Convert.ToDouble(tran.TAX_AMT));
+                  }
+                  if (document.GetType().GetProperty("SERVICECHARGE") != (PropertyInfo) null && tran.GetType().GetProperty("SERCHARGE_AMT") != (PropertyInfo) null && tran.SERCHARGE_AMT != null)
+                    document.SERVICECHARGE = tran.SERCHARGE_AMT.Trim() == "" ? 0.0 : Convert.ToDouble(tran.SERCHARGE_AMT);
+                  document.Operation_Currency = tran.OP_CUR;
+                  document.BaseCurrency_Exchange = !regex.IsMatch(tran.BC_EXCH) ? 1.0 : Convert.ToDouble(tran.BC_EXCH);
+                  document.DataFlowType = Library._strDataFlowType;
+                  document.FileName = Library._strFileName;
+                  document.ACTIVE = activeStatus;
+                  document.BrandId = Library.brandid;
+                  TransactionDetails transactionDetails6 = document;
+                  string strTenantId1 = Library._strTenantID;
+                  num4 = tran.RCPT_DT;
+                  string str1 = num4.ToString();
+                  string rcptNum1 = tran.RCPT_NUM;
+                  string str2 = strTenantId1 + str1 + rcptNum1;
+                  transactionDetails6.TENANT_RECEIPT_ID = str2;
+                  document.CUM_STATUS = 0;
+                  document.updated_at = now;
+                  CustomerDetails customerDetails = new CustomerDetails();
+                  customerDetails.CUST_NAME = tran.CUST_NAME;
+                  customerDetails.CUST_GENDER = tran.CUST_GEN;
+                  customerDetails.CUST_NATION = tran.CUST_NATION;
+                  customerDetails.CUST_EMAIL = tran.CUST_EMAIL;
+                  customerDetails.CUST_CONT = tran.CUST_CONT;
+                  customerDetails.CUST_PP_NO = tran.CUST_PP_NO;
+                  customerDetails.CUST_BP_NO = tran.CUST_BP;
+                  customerDetails.CUST_FL_NO = tran.CUST_FL_NO;
+                  customerDetails.CUST_PAX_TYPE = tran.CUST_PAX_TYPE;
+                  customerDetails.CUST_FL_CLASS = tran.CUST_FL_CLASS;
+                  customerDetails.CUST_BR_GATE_NO = tran.CUST_BR_GATE_NO;
+                  customerDetails.CUST_PNR_NO = tran.CUST_PNR_NO;
+                  customerDetails.CUST_DESTINATION = tran.CUST_DESTINATION;
+                  customerDetails.CUST_ORIGIN = tran.CUST_ORIGIN;
+                  customerDetails.VOUCH_CODE = tran.VOUCH_CODE;
+                  customerDetails.DATE_OF_DEPARTURE = tran.DATE_OF_DEPARTURE;
+                  if (document.GetType().GetProperty("CustomerMobileNo") != (PropertyInfo) null && tran.GetType().GetProperty("CustomerMobileNo") != (PropertyInfo) null && tran.CustomerMobileNo != null)
+                    customerDetails.CustomerMobileNo = tran.CustomerMobileNo.Trim();
+                  if (document.GetType().GetProperty("CustomerID") != (PropertyInfo) null && tran.GetType().GetProperty("CustomerID") != (PropertyInfo) null && tran.CustomerID != null)
+                    customerDetails.CustomerID = tran.CustomerID.Trim();
+                  if (document.GetType().GetProperty("OfferCode") != (PropertyInfo) null && tran.GetType().GetProperty("OfferCode") != (PropertyInfo) null && tran.OfferCode != null)
+                    customerDetails.OfferCode = tran.OfferCode.Trim();
+                  if (document.GetType().GetProperty("GiftVoucherNo") != (PropertyInfo) null && tran.GetType().GetProperty("GiftVoucherNo") != (PropertyInfo) null && tran.GiftVoucherNo != null)
+                    customerDetails.GiftVoucherNo = tran.GiftVoucherNo.Trim();
+                  document.Customer = customerDetails;
+                  if (Library._strDBName.ToUpper() == "GHIAL_HYDDB")
+                    document.SALESPERSON = tran.SALESPERSON;
+                  List<BsonDocument> bsonDocumentList4 = new List<BsonDocument>();
+                  bsonDocumentList4.Add(document.ToBsonDocument<TransactionDetails>());
+                  UpdateBuilder update = Update.Set("TENANT_ID", (BsonValue) Library._strTenantID);
+                  update.Set("REC_TYPE", (BsonValue) tran.REC_TYPE);
+                  update.Set("SITE_ID", (BsonValue) Library._strSiteId);
+                  update.Set("LOCATION_CODE", (BsonValue) tran.LOCATION_CODE);
+                  update.Set("SHIFT_NO", (BsonValue) tran.SHIFT_NO);
+                  update.Set("TERMINAL_ID", (BsonValue) tran.TERMINAL_ID);
+                  update.Set("RECEIPT_NO", (BsonValue) tran.RCPT_NUM);
+                  update.Set("RECEIPT_DATE", (BsonValue) Convert.ToInt32(tran.RCPT_DT));
+                  UpdateBuilder updateBuilder1 = update;
+                  num4 = tran.RCPT_DT;
+                  BsonValue int32_7 = (BsonValue) Convert.ToInt32(num4.ToString().Substring(6, 2).ToString());
+                  updateBuilder1.Set("RECEIPT_DAY", int32_7);
+                  UpdateBuilder updateBuilder2 = update;
+                  num4 = tran.RCPT_DT;
+                  BsonValue int32_8 = (BsonValue) Convert.ToInt32(num4.ToString().Substring(4, 2).ToString());
+                  updateBuilder2.Set("RECEIPT_MONTH", int32_8);
+                  UpdateBuilder updateBuilder3 = update;
+                  num4 = tran.RCPT_DT;
+                  BsonValue int32_9 = (BsonValue) Convert.ToInt32(num4.ToString().Substring(0, 4).ToString());
+                  updateBuilder3.Set("RECEIPT_YEAR", int32_9);
+                  UpdateBuilder updateBuilder4 = update;
+                  num4 = tran.RCPT_DT;
+                  BsonValue int32_10 = (BsonValue) Convert.ToInt32(num4.ToString().Substring(0, 6).ToString());
+                  updateBuilder4.Set("RECEIPT_MONTH_YEAR", int32_10);
+                  update.Set("RECEIPT_TIME", (BsonValue) tran.RCPT_TM);
+                  update.Set("RECEIPT_HOUR", (BsonValue) Convert.ToInt32(tran.RCPT_TM.ToString().Substring(0, 2).ToString()));
+                  update.Set("RECEIPT_MINUTE", (BsonValue) Convert.ToInt32(tran.RCPT_TM.ToString().Substring(2, 2).ToString()));
+                  update.Set("RECEIPT_SECONDS", (BsonValue) Convert.ToInt32(tran.RCPT_TM.ToString().Substring(4, 2).ToString()));
+                  UpdateBuilder updateBuilder5 = update;
+                  num4 = tran.RCPT_DT;
+                  BsonValue isoWeekOfYear2 = (BsonValue) Library.GetISOWeekOfYear(num4.ToString(), out weekyear);
+                  updateBuilder5.Set("WEEKNUMBER", isoWeekOfYear2);
+                  update.Set("WEEK_YEAR", (BsonValue) weekyear);
+                  update.Set("BUSINESS_DT", (BsonValue) tran.BUSINESS_DT);
+                  update.Set("DISCOUNT", (BsonValue) Convert.ToDouble(tran.DISCOUNT));
+                  update.Set("TRANS_STATUS", (BsonValue) tran.TRAN_STATUS.Trim());
+                  if (tran.TRAN_STATUS.Trim() == "SALES")
+                  {
+                    update.Set("INV_AMT", (BsonValue) Convert.ToDouble(tran.INV_AMT));
+                    update.Set("TAX_AMT", (BsonValue) Convert.ToDouble(tran.TAX_AMT));
+                    update.Set("NET_SALES", (BsonValue) (Convert.ToDouble(tran.INV_AMT) - Convert.ToDouble(tran.TAX_AMT)));
+                    update.Set("RET_AMT", (BsonValue) Convert.ToDouble(0));
+                    update.Set("RET_TAX_AMT", (BsonValue) Convert.ToDouble(0));
+                  }
+                  else if (tran.TRAN_STATUS.Trim() == "RETURN")
+                  {
+                    update.Set("INV_AMT", (BsonValue) Convert.ToDouble(0));
+                    update.Set("TAX_AMT", (BsonValue) Convert.ToDouble(0));
+                    update.Set("RET_AMT", (BsonValue) Convert.ToDouble(Convert.ToString(tran.RET_AMT)));
+                    update.Set("RET_TAX_AMT", (BsonValue) Convert.ToDouble(tran.TAX_AMT));
+                    update.Set("NET_SALES", (BsonValue) (-1.0 * (Math.Abs(Convert.ToDouble(tran.RET_AMT)) - Convert.ToDouble(tran.TAX_AMT))));
+                  }
+                  if (document.GetType().GetProperty("SERVICECHARGE") != (PropertyInfo) null && tran.GetType().GetProperty("SERCHARGE_AMT") != (PropertyInfo) null)
+                  {
+                    if (tran.SERCHARGE_AMT != null)
+                      update.Set("SERVICECHARGE", (BsonValue) (tran.SERCHARGE_AMT.Trim() == "" ? 0.0 : Convert.ToDouble(tran.SERCHARGE_AMT)));
+                    else
+                      update.Set("SERVICECHARGE", (BsonValue) Convert.ToDouble("0"));
+                  }
+                  else
+                    update.Set("SERVICECHARGE", (BsonValue) Convert.ToDouble("0"));
+                  update.Set("Operation_Currency", (BsonValue) tran.OP_CUR);
+                  if (regex.IsMatch(tran.BC_EXCH))
+                    update.Set("BaseCurrency_Exchange", (BsonValue) Convert.ToDouble(tran.BC_EXCH));
+                  else
+                    update.Set("BaseCurrency_Exchange", (BsonValue) 1);
+                  update.Set("DataFlowType", (BsonValue) Library._strDataFlowType);
+                  update.Set("FileName", (BsonValue) Library._strFileName);
+                  update.Set("ACTIVE", (BsonValue) activeStatus);
+                  update.Set("BrandId", (BsonValue) Library.brandid);
+                  UpdateBuilder updateBuilder6 = update;
+                  string strTenantId2 = Library._strTenantID;
+                  num4 = tran.RCPT_DT;
+                  string str3 = num4.ToString();
+                  string rcptNum2 = tran.RCPT_NUM;
+                  string str4 = tran.TRAN_STATUS.Trim();
+                  BsonValue bsonValue = (BsonValue) (strTenantId2 + str3 + rcptNum2 + str4);
+                  updateBuilder6.Set("TENANT_RECEIPT_ID", bsonValue);
+                  update.Set("CUM_STATUS", (BsonValue) 0);
+                  if (tran.GetType().GetProperty("CustomerMobileNo") != (PropertyInfo) null)
+                  {
+                    if (tran.CustomerMobileNo != null)
+                      update.Set("Customer.CustomerMobileNo", (BsonValue) tran.CustomerMobileNo.Trim());
+                    else
+                      update.Set("Customer.CustomerMobileNo", (BsonValue) "");
+                  }
+                  else
+                    update.Set("Customer.CustomerMobileNo", (BsonValue) "");
+                  if (tran.GetType().GetProperty("CustomerID") != (PropertyInfo) null)
+                  {
+                    if (tran.CustomerID != null)
+                      update.Set("Customer.CustomerID", (BsonValue) tran.CustomerID.Trim());
+                    else
+                      update.Set("Customer.CustomerID", (BsonValue) "");
+                  }
+                  else
+                    update.Set("Customer.CustomerID", (BsonValue) "");
+                  if (tran.GetType().GetProperty("OfferCode") != (PropertyInfo) null)
+                  {
+                    if (tran.OfferCode != null)
+                      update.Set("Customer.OfferCode", (BsonValue) tran.OfferCode.Trim());
+                    else
+                      update.Set("Customer.OfferCode", (BsonValue) "");
+                  }
+                  else
+                    update.Set("Customer.OfferCode", (BsonValue) "");
+                  if (tran.GetType().GetProperty("GiftVoucherNo") != (PropertyInfo) null)
+                  {
+                    if (tran.GiftVoucherNo != null)
+                      update.Set("Customer.GiftVoucherNo", (BsonValue) tran.GiftVoucherNo.Trim());
+                    else
+                      update.Set("Customer.GiftVoucherNo", (BsonValue) "");
+                  }
+                  else
+                    update.Set("Customer.GiftVoucherNo", (BsonValue) "");
+                  update.Set("updated_at", (BsonValue) now);
+                  update.Set("Customer.CUST_NAME", (BsonValue) tran.CUST_NAME);
+                  update.Set("Customer.CUST_GENDER", (BsonValue) tran.CUST_GEN);
+                  update.Set("Customer.CUST_NATION", (BsonValue) tran.CUST_NATION);
+                  update.Set("Customer.CUST_EMAIL", (BsonValue) tran.CUST_EMAIL);
+                  update.Set("Customer.CUST_CONT", (BsonValue) tran.CUST_CONT);
+                  update.Set("Customer.CUST_PP_NO", (BsonValue) tran.CUST_PP_NO);
+                  update.Set("Customer.CUST_BP_NO", (BsonValue) tran.CUST_BP);
+                  update.Set("Customer.CUST_FL_NO", (BsonValue) tran.CUST_FL_NO);
+                  update.Set("Customer.CUST_PAX_TYPE", (BsonValue) tran.CUST_PAX_TYPE);
+                  update.Set("Customer.CUST_FL_CLASS", (BsonValue) tran.CUST_FL_CLASS);
+                  update.Set("Customer.CUST_BR_GATE_NO", (BsonValue) tran.CUST_BR_GATE_NO);
+                  update.Set("Customer.CUST_PNR_NO", (BsonValue) tran.CUST_PNR_NO);
+                  update.Set("Customer.CUST_DESTINATION", (BsonValue) tran.CUST_DESTINATION);
+                  update.Set("Customer.CUST_ORIGIN", (BsonValue) tran.CUST_ORIGIN);
+                  update.Set("Customer.VOUCH_CODE", (BsonValue) tran.VOUCH_CODE);
+                  update.Set("Customer.DATE_OF_DEPARTURE", (BsonValue) tran.DATE_OF_DEPARTURE);
+                  if (Library._strDBName.ToUpper() == "GHIAL_HYDDB")
+                  {
+                    if (tran.SALESPERSON != null)
+                      update.Set("SALESPERSON", (BsonValue) tran.SALESPERSON);
+                    else
+                      update.Set("SALESPERSON", (BsonValue) "");
+                  }
+                  else
+                    update.Set("SALESPERSON", (BsonValue) "");
+                  List<BsonDocument> documents1 = new List<BsonDocument>();
+                  if (Library.sNeedItemDetails == "1")
+                  {
+                    foreach (FrxItemDetail frxItemDetail in tran.ItemDetail)
+                    {
+                      if (!(frxItemDetail.RCPT_NUM.Trim() == ""))
+                      {
+                        FrxItemDetails frxItemDetails = new FrxItemDetails()
+                        {
+                          SITE_ID = Library._strSiteId,
+                          TENANT_ID = Library._strTenantID,
+                          POS_TILL = tran.TERMINAL_ID,
+                          REC_TYPE = frxItemDetail.REC_TYPE,
+                          RECEIPT_NO = frxItemDetail.RCPT_NUM,
+                          RECEIPT_DATE = Convert.ToInt32(frxItemDetail.RCPT_DT),
+                          RECEIPT_DAY = Convert.ToInt32(frxItemDetail.RCPT_DT.Substring(6, 2).ToString()),
+                          RECEIPT_MONTH = Convert.ToInt32(frxItemDetail.RCPT_DT.Substring(4, 2).ToString()),
+                          RECEIPT_YEAR = Convert.ToInt32(frxItemDetail.RCPT_DT.Substring(0, 4).ToString()),
+                          RECEIPT_TIME = tran.RCPT_TM,
+                          RECEIPT_HOUR = Convert.ToInt32(tran.RCPT_TM.ToString().Substring(0, 2).ToString()),
+                          RECEIPT_MINUTE = Convert.ToInt32(tran.RCPT_TM.ToString().Substring(2, 2).ToString()),
+                          RECEIPT_SECONDS = Convert.ToInt32(tran.RCPT_TM.ToString().Substring(4, 2).ToString()),
+                          SHIFT_NO = tran.SHIFT_NO,
+                          AC_DESC = frxItemDetail.AC_HDS,
+                          AC_HOLDER = frxItemDetail.AC_HDR,
+                          COM_CHARGE = Convert.ToDouble(frxItemDetail.COM_CH),
+                          FEE_CHARGE = Convert.ToDouble(frxItemDetail.FE_CH),
+                          FRX_AMOUNT = Convert.ToDouble(frxItemDetail.FRN_AMT),
+                          FRX_RATE = Convert.ToDouble(frxItemDetail.FX_RA),
+                          ITEM_STATUS = frxItemDetail.ITEM_STATUS,
+                          LOC_AMOUNT = Convert.ToDouble(frxItemDetail.LOC_AMT),
+                          LOC_DESC = frxItemDetail.LOC_DS,
+                          LOC_DUE = Convert.ToDouble(frxItemDetail.LOC_DUE)
+                        };
+                        frxItemDetails.ITEM_STATUS = frxItemDetail.ITEM_STATUS;
+                        frxItemDetails.TENANT_RECEIPT_ID = Library._strTenantID + frxItemDetail.RCPT_DT.ToString() + frxItemDetail.RCPT_NUM + frxItemDetail.ITEM_STATUS;
+                        frxItemDetails.CUM_STATUS = 0;
+                        frxItemDetails.updated_at = now;
+                        frxItemDetails.MRKT_RATE = Convert.ToDouble(frxItemDetail.MAR_RT);
+                        frxItemDetails.OUTLET_SITE_ID = frxItemDetail.SID;
+                        frxItemDetails.PROD_TYPE = frxItemDetail.PRD_TY;
+                        frxItemDetails.PROM_CODE = frxItemDetail.PRM_CD;
+                        frxItemDetails.PROM_DESC = frxItemDetail.PRM_NM;
+                        frxItemDetails.SITE_NAME = frxItemDetail.S_NAM;
+                        frxItemDetails.SNO = frxItemDetail.SNO;
+                        frxItemDetails.TAX_AMOUNT = Convert.ToDouble(frxItemDetail.TAX);
+                        frxItemDetails.TRAN_DESC = frxItemDetail.TRS_DS;
+                        frxItemDetails.UNIQ_ID = frxItemDetail.UIN_ID;
+                        frxItemDetails.updated_at = now;
+                        frxItemDetails.NETSALES = Convert.ToDouble(frxItemDetail.NETSALES);
+                        documents1.Add(frxItemDetails.ToBsonDocument<FrxItemDetails>());
+                      }
+                    }
+                  }
+                  List<BsonDocument> documents2 = new List<BsonDocument>();
+                  foreach (PaymentDetail paymentDetail in tran.PaymentDetail)
+                  {
+                    if (!(paymentDetail.RCPT_NUM.Trim() == ""))
+                      documents2.Add(new PaymentDetails()
+                      {
+                        SITE_ID = Library._strSiteId,
+                        TENANT_ID = Library._strTenantID,
+                        POS_TILL = tran.TERMINAL_ID,
+                        REC_TYPE = paymentDetail.REC_TYPE,
+                        RECEIPT_NO = paymentDetail.RCPT_NUM,
+                        RECEIPT_DATE = Convert.ToInt32(paymentDetail.RCPT_DT),
+                        RECEIPT_DAY = Convert.ToInt32(paymentDetail.RCPT_DT.Substring(6, 2).ToString()),
+                        RECEIPT_MONTH = Convert.ToInt32(paymentDetail.RCPT_DT.Substring(4, 2).ToString()),
+                        RECEIPT_YEAR = Convert.ToInt32(paymentDetail.RCPT_DT.Substring(0, 4).ToString()),
+                        RECEIPT_TIME = tran.RCPT_TM,
+                        RECEIPT_HOUR = Convert.ToInt32(tran.RCPT_TM.ToString().Substring(0, 2).ToString()),
+                        RECEIPT_MINUTE = Convert.ToInt32(tran.RCPT_TM.ToString().Substring(2, 2).ToString()),
+                        RECEIPT_SECONDS = Convert.ToInt32(tran.RCPT_TM.ToString().Substring(4, 2).ToString()),
+                        SHIFT_NO = tran.SHIFT_NO,
+                        BUSINESS_DT = tran.BUSINESS_DT,
+                        PAYMENT_NAME = paymentDetail.PAYMENT_NAME,
+                        CURRENCY_CODE = paymentDetail.CURRENCY_CODE,
+                        BC_EXCH = (!regex.IsMatch(paymentDetail.BC_EXCH) ? 1.0 : Convert.ToDouble(paymentDetail.BC_EXCH)),
+                        TENDER_AMOUNT = (!regex.IsMatch(paymentDetail.TENDER_AMOUNT) ? 1.0 : Convert.ToDouble(paymentDetail.TENDER_AMOUNT)),
+                        EXCHANGE_RATE = (!regex.IsMatch(paymentDetail.EXCHANGE_RATE) ? 1.0 : Convert.ToDouble(paymentDetail.EXCHANGE_RATE)),
+                        OP_CUR = paymentDetail.OP_CUR,
+                        PAYMENT_STATUS = paymentDetail.PAYMENT_STATUS,
+                        TENANT_RECEIPT_ID = (Library._strTenantID + paymentDetail.RCPT_DT.ToString() + paymentDetail.RCPT_NUM),
+                        CUM_STATUS = 0,
+                        updated_at = now
+                      }.ToBsonDocument<PaymentDetails>());
+                  }
+                  if (bsonDocumentList4.Count > 0)
+                  {
+                    if (Library.sapplyUpsert != "1")
+                    {
+                      if (Library.strPrimaryDataCaptureType == "Pos Patrol | Integra" && Library._strDataFlowType == "PPI" || Library.strPrimaryDataCaptureType == "Pos Patrol | Push" && Library._strDataFlowType == "PPH" || Library.strPrimaryDataCaptureType == "Pos Patrol | Print" && Library._strDataFlowType == "PPP")
+                      {
+                        IMongoQuery query = Query.And(Query.EQ("SITE_ID", (BsonValue) Library._strSiteId), Query.EQ("TENANT_ID", (BsonValue) Library._strTenantID), Query.EQ("RECEIPT_DATE", (BsonValue) tran.RCPT_DT), Query.EQ("RECEIPT_NO", (BsonValue) tran.RCPT_NUM), Query.EQ("RECEIPT_TIME", (BsonValue) tran.RCPT_TM), Query.EQ("TRANS_STATUS", (BsonValue) tran.TRAN_STATUS), Query.EQ("TERMINAL_ID", (BsonValue) tran.TERMINAL_ID));
+                        try
+                        {
+                          MongoCollection<TransactionDetails> collection = Library.MonDatabase.GetCollection<TransactionDetails>("TransactionDetails");
+                          if (collection.FindOne(query) == null)
+                          {
+                            collection.Insert(document);
+                            collection.Save(document);
+                          }
+                          ++num1;
+                          num2 += Convert.ToDouble(tran.INV_AMT);
+                          if (documents1.Count > 0)
+                          {
+                            try
+                            {
+                              Library.MonDatabase.GetCollection<FrxItemDetails>("Frx_ItemDetails").InsertBatch<BsonDocument>((IEnumerable<BsonDocument>) documents1);
+                            }
+                            catch
+                            {
+                            }
+                          }
+                          if (documents2.Count > 0)
+                          {
+                            try
+                            {
+                              Library.MonDatabase.GetCollection<PaymentDetails>("PaymentDetails").InsertBatch<BsonDocument>((IEnumerable<BsonDocument>) documents2);
+                            }
+                            catch
+                            {
+                            }
+                          }
+                        }
+                        catch (Exception ex)
+                        {
+                          if (!ex.Message.Contains("The _id field cannot be changed from"))
+                            ;
+                          if (!ex.Message.Contains("duplicate key error collection"))
+                            Library.WriteLog(Library.strErrorFile, $"Primary Record:{document.RECEIPT_NO};Error -File:{Library._strFileName}==>{ex.Message.ToString()}");
+                        }
+                      }
+                      try
+                      {
+                        IMongoQuery query = Query.And(Query.EQ("SITE_ID", (BsonValue) Library._strSiteId), Query.EQ("TENANT_ID", (BsonValue) Library._strTenantID), Query.EQ("RECEIPT_DATE", (BsonValue) tran.RCPT_DT), Query.EQ("RECEIPT_NO", (BsonValue) tran.RCPT_NUM), Query.EQ("RECEIPT_TIME", (BsonValue) tran.RCPT_TM), Query.EQ("TRANS_STATUS", (BsonValue) tran.TRAN_STATUS), Query.EQ("TERMINAL_ID", (BsonValue) tran.TERMINAL_ID));
+                        MongoCollection<TransactionDetails> collection = Library.MonDatabase.GetCollection<TransactionDetails>(Library._strCollectionName);
+                        if (collection.FindOne(query) == null)
+                        {
+                          collection.Insert(document);
+                          collection.Save(document);
+                        }
+                        ++num1;
+                        num2 += Convert.ToDouble(tran.INV_AMT);
+                        if (documents1.Count > 0)
+                        {
+                          try
+                          {
+                            Library.MonDatabase.GetCollection<FrxItemDetails>(Library._strFrxItemCollectionName).InsertBatch<BsonDocument>((IEnumerable<BsonDocument>) documents1);
+                          }
+                          catch
+                          {
+                          }
+                        }
+                        if (documents2.Count > 0)
+                        {
+                          try
+                          {
+                            Library.MonDatabase.GetCollection<PaymentDetails>(Library._strPaymentCollectionName).InsertBatch<BsonDocument>((IEnumerable<BsonDocument>) documents2);
+                          }
+                          catch
+                          {
+                          }
+                        }
+                      }
+                      catch (Exception ex)
+                      {
+                        if (!ex.Message.Contains("The _id field cannot be changed from"))
+                          ;
+                        if (!ex.Message.Contains("duplicate key error collection"))
+                          Library.WriteLog(Library.strErrorFile, $"Sec Record:{document.RECEIPT_NO};Error -File:{Library._strFileName}==>{ex.Message.ToString()}");
+                      }
+                    }
+                    else if (Library.sapplyUpsert == "1")
+                    {
+                      if (Library.strPrimaryDataCaptureType == "Pos Patrol | Integra" && Library._strDataFlowType == "PPI" || Library.strPrimaryDataCaptureType == "Pos Patrol | Push" && Library._strDataFlowType == "PPH" || Library.strPrimaryDataCaptureType == "Pos Patrol | Print" && Library._strDataFlowType == "PPP")
+                      {
+                        IMongoQuery query = Query.And(Query.EQ("SITE_ID", (BsonValue) Library._strSiteId), Query.EQ("TENANT_ID", (BsonValue) Library._strTenantID), Query.EQ("RECEIPT_DATE", (BsonValue) tran.RCPT_DT), Query.EQ("RECEIPT_NO", (BsonValue) tran.RCPT_NUM), Query.EQ("RECEIPT_TIME", (BsonValue) tran.RCPT_TM), Query.EQ("TRANS_STATUS", (BsonValue) tran.TRAN_STATUS), Query.EQ("TERMINAL_ID", (BsonValue) tran.TERMINAL_ID));
+                        try
+                        {
+                          Library.MonDatabase.GetCollection("TransactionDetails").Update(query, (IMongoUpdate) update, UpdateFlags.Upsert);
+                          fid.NoOfRowsInserted = num1;
+                          ++num1;
+                          num2 += Convert.ToDouble(tran.INV_AMT);
+                          fid.TotInvoiceAmtInserted = num2;
+                          if (Library.sNeedItemDetails == "1")
+                            Library.UpsertItemDetails("Frx_ItemDetails", (object) tran, Library._strTenantID, now, "YES");
+                          Library.UpsertPaymentDetails(tran.PaymentDetail, tran.RCPT_TM, tran.TERMINAL_ID, tran.SHIFT_NO, tran.BUSINESS_DT, Library._strTenantID, now, "PaymentDetails");
+                        }
+                        catch (Exception ex)
+                        {
+                          if (!ex.Message.Contains("The _id field cannot be changed from"))
+                            ;
+                          if (!ex.Message.Contains("duplicate key error collection"))
+                            Library.WriteLog(Library.strErrorFile, $"Primary Record:{tran.RCPT_NUM};Error -File:{Library._strFileName}==>{ex.Message.ToString()}");
+                        }
+                      }
+                      try
+                      {
+                        IMongoQuery query = Query.And(Query.EQ("SITE_ID", (BsonValue) Library._strSiteId), Query.EQ("TENANT_ID", (BsonValue) Library._strTenantID), Query.EQ("RECEIPT_DATE", (BsonValue) tran.RCPT_DT), Query.EQ("RECEIPT_NO", (BsonValue) tran.RCPT_NUM), Query.EQ("RECEIPT_TIME", (BsonValue) tran.RCPT_TM), Query.EQ("TRANS_STATUS", (BsonValue) tran.TRAN_STATUS), Query.EQ("TERMINAL_ID", (BsonValue) tran.TERMINAL_ID));
+                        Library.MonDatabase.GetCollection(Library._strCollectionName).Update(query, (IMongoUpdate) update, UpdateFlags.Upsert);
+                        fid.NoOfRowsInserted = num1;
+                        ++num1;
+                        num2 += Convert.ToDouble(tran.INV_AMT);
+                        fid.TotInvoiceAmtInserted = num2;
+                        if (Library.sNeedItemDetails == "1")
+                          Library.UpsertItemDetails(Library._strFrxItemCollectionName, (object) tran, Library._strTenantID, now, "YES");
+                        Library.UpsertPaymentDetails(tran.PaymentDetail, tran.RCPT_TM, tran.TERMINAL_ID, tran.SHIFT_NO, tran.BUSINESS_DT, Library._strTenantID, now, Library._strPaymentCollectionName);
+                      }
+                      catch (Exception ex)
+                      {
+                        if (!ex.Message.Contains("The _id field cannot be changed from"))
+                          ;
+                        if (!ex.Message.Contains("duplicate key error collection"))
+                          Library.WriteLog(Library.strErrorFile, $"Sec Record:{tran.RCPT_NUM};Error -File:{Library._strFileName}==>{ex.Message.ToString()}");
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          fid.NoOfRowsInserted = num1;
+          fid.TotInvoiceAmtInserted = num2;
+        }
+      }
+    }
+    bool flag;
+    try
+    {
+      Library.MonDatabase.GetCollection<FileInfoDetails>("FileInfoDetails").Insert<FileInfoDetails>(fid);
+      Library.WriteLog(Library.strStatusFile, "DataImport completed at " + (object) DateTime.Now);
+      flag = true;
+    }
+    catch (Exception ex)
+    {
+      Library._strErrorPath.Replace(Library._strPath, "").Replace("\\", "/");
+      Library.WriteLog(Library.strErrorFile, $"Error: Occured for the file:{Library._strFileName}==>{ex.ToString()}");
+      flag = false;
+    }
+    return flag;
+  }
+
+  private static bool updatelounge(
+    string _strTenantID,
+    fileObject_lounge fol,
+    string _strFileName,
+    FileInfoDetails fid)
+  {
+    int num1 = 0;
+    double num2 = 0.0;
+    List<LoungeDetails> loungeDetailsList = new List<LoungeDetails>();
+    foreach (LoungeTransactions transaction in fol.Transactions)
+    {
+      LoungeTransactions trans = transaction;
+      DateTime now = DateTime.Now;
+      long num3 = 0;
+      if (Library.GetCount("PPL", _strTenantID, trans.RCPT_TM, trans.TRAN_STATUS, trans.TERMINAL_ID, Convert.ToInt32(trans.RCPT_DT), trans.RCPT_NUM) <= 0L)
+      {
+        int activeStatus = Library.GetActiveStatus(_strTenantID, Convert.ToInt32(trans.RCPT_DT));
+        num3 = 0L;
+        if (loungeDetailsList == null || loungeDetailsList.Where<LoungeDetails>((Func<LoungeDetails, bool>) (x => x.RECEIPT_NO.Equals(trans.RCPT_NUM) && x.RECEIPT_DATE.Equals((object) trans.RCPT_DT) && x.RECEIPT_TIME.Equals(trans.RCPT_TM) && x.TRAN_STATUS.Equals(trans.TRAN_STATUS) && x.TERMINAL_ID.Equals(trans.TERMINAL_ID) && x.TENANT_ID.Equals(_strTenantID))).Count<LoungeDetails>() <= 0)
+        {
+          Regex regex = new Regex("^[0-9.]+$");
+          if (!(trans.RCPT_NUM == ""))
+          {
+            LoungeDetails loungeDetails = new LoungeDetails();
+            loungeDetails.REC_TYPE = trans.REC_TYPE;
+            loungeDetails.TENANT_ID = _strTenantID;
+            loungeDetails.SITE_ID = Library._strSiteId;
+            loungeDetails.LOCATION_CODE = trans.LOCATION_CODE;
+            loungeDetails.SHIFT_NO = trans.SHIFT_NO;
+            loungeDetails.TERMINAL_ID = trans.TERMINAL_ID;
+            loungeDetails.RECEIPT_NO = trans.RCPT_NUM;
+            loungeDetails.RECEIPT_DATE = Convert.ToInt32(trans.RCPT_DT);
+            loungeDetails.RECEIPT_DAY = Convert.ToInt32(trans.RCPT_DT.ToString().Substring(6, 2).ToString());
+            loungeDetails.RECEIPT_MONTH = Convert.ToInt32(trans.RCPT_DT.ToString().Substring(4, 2).ToString());
+            loungeDetails.RECEIPT_YEAR = Convert.ToInt32(trans.RCPT_DT.ToString().Substring(0, 4).ToString());
+            loungeDetails.RECEIPT_MONTH_YEAR = Convert.ToInt32(trans.RCPT_DT.ToString().Substring(0, 6).ToString());
+            loungeDetails.RECEIPT_TIME = trans.RCPT_TM;
+            loungeDetails.RECEIPT_HOUR = Convert.ToInt32(trans.RCPT_TM.ToString().Substring(0, 2).ToString());
+            loungeDetails.RECEIPT_MINUTE = Convert.ToInt32(trans.RCPT_TM.ToString().Substring(2, 2).ToString());
+            loungeDetails.RECEIPT_SECONDS = Convert.ToInt32(trans.RCPT_TM.ToString().Substring(4, 2).ToString());
+            int receiptYear = loungeDetails.RECEIPT_YEAR;
+            loungeDetails.DISCOUNT = Convert.ToDouble(trans.DISCOUNT);
+            loungeDetails.TRAN_STATUS = trans.TRAN_STATUS;
+            if (trans.TRAN_STATUS.Trim() == "SALES")
+            {
+              loungeDetails.INV_AMT = Convert.ToDouble(trans.INV_AMT);
+              loungeDetails.TAX_AMT = Convert.ToDouble(trans.TAX_AMT);
+              loungeDetails.NET_SALES = Convert.ToDouble(trans.INV_AMT) - Convert.ToDouble(trans.TAX_AMT);
+            }
+            else if (trans.TRAN_STATUS.Trim() == "RETURN")
+            {
+              loungeDetails.RET_AMT = Convert.ToDouble(Convert.ToString(trans.RET_AMT));
+              loungeDetails.RET_TAX_AMT = Convert.ToDouble(trans.TAX_AMT);
+              loungeDetails.NET_SALES = -1.0 * (Math.Abs(Convert.ToDouble(trans.RET_AMT)) - Convert.ToDouble(trans.TAX_AMT));
+            }
+            loungeDetails.OPERATION_CURRENCY = trans.OP_CUR;
+            loungeDetails.BASECURRENCY_EXCHANGE = !regex.IsMatch(trans.BC_EXCH) ? 1.0 : Convert.ToDouble(trans.BC_EXCH);
+            loungeDetails.AIRLINE_NAME = trans.AIRLINE_NAME;
+            loungeDetails.ALLIANCE_MEMBER = trans.ALLIANCE_MEMBER;
+            try
+            {
+              loungeDetails.COUNT = Convert.ToInt32(trans.COUNT);
+            }
+            catch
+            {
+              loungeDetails.COUNT = 0;
+            }
+            loungeDetails.DATAFLOWTYPE = "PPL";
+            loungeDetails.FILENAME = _strFileName;
+            loungeDetails.ACTIVE = activeStatus;
+            loungeDetails.UPDATED_AT = now;
+            loungeDetails.CUST_NAME = trans.CUST_NAME;
+            loungeDetails.CUST_GENDER = trans.CUST_GEN;
+            loungeDetails.CUST_NATION = trans.CUST_NATION;
+            loungeDetails.CUST_EMAIL = trans.CUST_EMAIL;
+            loungeDetails.CUST_CONT = trans.CUST_CONT;
+            loungeDetails.CUST_PP_NO = trans.CUST_PP_NO;
+            loungeDetails.CUST_BP_NO = trans.CUST_BP;
+            loungeDetails.CUST_FL_NO = trans.CUST_FL_NO;
+            loungeDetails.CUST_PAX_TYPE = trans.CUST_PAX_TYPE;
+            loungeDetails.CUST_FL_CLASS = trans.CUST_FL_CLASS;
+            loungeDetails.CUST_BR_GATE_NO = trans.CUST_BR_GATE_NO;
+            loungeDetails.CUST_PNR_NO = trans.CUST_PNR_NO;
+            loungeDetails.CUST_DESTINATION = trans.CUST_DESTINATION;
+            loungeDetails.CUST_ORIGIN = trans.CUST_ORIGIN;
+            loungeDetails.VOUCH_CODE = trans.VOUCH_CODE;
+            loungeDetails.CONTRACT_NAME = trans.CONTRACT_NAME;
+            loungeDetails.CUST_TYPE = trans.CUST_TYPE;
+            loungeDetails.DATE_OF_DEPARTURE = trans.DATE_OF_DEPARTURE;
+            ++num1;
+            num2 += Convert.ToDouble(trans.INV_AMT);
+            loungeDetailsList.Add(loungeDetails);
+          }
+        }
+      }
+    }
+    fid.NoOfRowsInserted = num1;
+    fid.TotInvoiceAmtInserted = num2;
+    fid.RecType = fol.Header.REC_TYPE;
+    fid.FileType = fol.Header.FILE_TYPE;
+    fid.SiteId = Library._strSiteId;
+    fid.TenantId = _strTenantID;
+    fid.FileCreatedDate = fol.Header.FILE_CR_DT;
+    fid.FileCreatedTime = fol.Header.FILE_CR_TM;
+    fid.TRANS_DATE = fol.Header.TRANS_DATE;
+    fid.FileSeqNumber = fol.Header.FILE_SEQ_NUM;
+    fid.FileName = fol.Header.File_Name;
+    fid.NoOfRowsReceived = Convert.ToInt32(fol.Footer.NO_OF_RECORDS.ToString());
+    fid.TotInvoiceAmtReceived = Convert.ToDouble(fol.Footer.HASH_TOTAL.ToString());
+    bool flag;
+    try
+    {
+      if (loungeDetailsList.Count > 0)
+        Library.MonDatabase.GetCollection<LoungeDetails>("LoungeDetails").InsertBatch((IEnumerable<LoungeDetails>) loungeDetailsList);
+      Library.WriteLog(Library.strStatusFile, "Lounge DataImport completed at " + (object) DateTime.Now);
+      flag = true;
+    }
+    catch (Exception ex)
+    {
+      Library.WriteLog(Library.strStatusFile, $"Lounge DataImport Error: {(object) DateTime.Now}{Environment.NewLine}{ex.Message}");
+      flag = false;
+    }
+    return flag;
+  }
+
+  private static void WriteLogtoDB(
+    string filetype,
+    string rectype,
+    string tenantid,
+    int filedate,
+    int filetime,
+    int[] transdate,
+    string filename,
+    int rowsinserted,
+    int rowsreceived,
+    double totinvamtrecvd,
+    double totinvamtinserted,
+    string logstatus,
+    string logdesc,
+    string filestatus,
+    string logtype,
+    string filesize,
+    string filepath)
+  {
+    LogDetails logDetails = new LogDetails()
+    {
+      BusinessDates = transdate,
+      FileCreateDate = filedate,
+      FileCreateTime = filetime,
+      FileName = filename,
+      FilePath = filepath,
+      FileSize = filesize,
+      FileType = filetype,
+      FileStatus = filestatus,
+      LogType = logtype,
+      LogDescription = logdesc,
+      NoofRowsInserted = rowsinserted,
+      NoofRowsReceived = rowsreceived,
+      REC_TYPE = rectype,
+      SITE_ID = Library._strSiteId,
+      TENANT_ID = tenantid,
+      TotalInvAmountInserted = totinvamtinserted,
+      TotalInvAmountReceived = totinvamtrecvd,
+      LogStatus = logstatus,
+      Updated_At = DateTime.Now
+    };
+    List<BsonDocument> documents = new List<BsonDocument>();
+    MongoCollection<LogDetails> collection = Library.MonDatabase.GetCollection<LogDetails>("LogDetails");
+    documents.Add(logDetails.ToBsonDocument<LogDetails>());
+    collection.InsertBatch<BsonDocument>((IEnumerable<BsonDocument>) documents);
+  }
+
+  private static void flushdaywise(string tenanid, int recptdate, string siteid)
+  {
+    IMongoQuery query = Query.And(Query.EQ("RECEIPT_DATE", (BsonValue) recptdate), Query.EQ("TENANT_ID", (BsonValue) tenanid), Query.EQ("SITE_ID", (BsonValue) siteid));
+    Library.MonDatabase.GetCollection<BsonDocument>("Daywise_Cumulative").Remove(query);
+  }
+
+  private static void flushmonthwise(string tenanid, int recptdate, string siteid)
+  {
+    IMongoQuery query = Query.And(Query.EQ("RECEIPT_MONTH_YEAR", (BsonValue) recptdate), Query.EQ("TENANT_ID", (BsonValue) tenanid), Query.EQ("SITE_ID", (BsonValue) siteid));
+    Library.MonDatabase.GetCollection<BsonDocument>("Monthwise_Cumulative").Remove(query);
+  }
+
+  private static void importProcessUpsert()
+  {
+    List<TransactionDetails> transactionDetailsList = new List<TransactionDetails>();
+    List<ItemDetails> itemDetailsList = new List<ItemDetails>();
+    List<PaymentDetails> paymentDetailsList = new List<PaymentDetails>();
+    string[] array1 = ((IEnumerable<string>) Directory.GetDirectories(Library._strPath)).OrderBy<string, string>((Func<string, string>) (o => new DirectoryInfo(o).Name)).ToArray<string>();
+    string filename = "";
+    string _strTenantID = "";
+    string str1 = "";
+    string str2 = "";
+    string str3 = ConfigurationManager.AppSettings["NeedItemData"].ToString();
+    if (ConfigurationManager.AppSettings["FolderReadOrder"].ToString().Trim() == "D")
+      array1 = ((IEnumerable<string>) Directory.GetDirectories(Library._strPath)).OrderByDescending<string, string>((Func<string, string>) (o => new DirectoryInfo(o).Name)).ToArray<string>();
+    try
+    {
+      foreach (string path1 in array1)
+      {
+        Thread.Sleep(20);
+        if (!path1.Contains(Library._strErrorPath) && !path1.Contains(Library._strFinishedPath) && !path1.Contains("ErrorLog") && !path1.Contains("StatusLog"))
+        {
+          string sfolder = Library._strFinishedPath + path1.Replace(Library._strPath, "");
+          Library.createFolder(sfolder);
+          string[] allowedExtensions = new string[4]
+          {
+            ".txt",
+            ".zip",
+            ".rar",
+            ".7z"
+          };
+          string[] strArray1 = new string[3]
+          {
+            "PPI",
+            "PPP",
+            "PPH"
+          };
+          string[] array2 = ((IEnumerable<string>) Directory.GetFiles(path1)).Where<string>((Func<string, bool>) (file => ((IEnumerable<string>) allowedExtensions).Any<string>(new Func<string, bool>(file.ToLower().EndsWith)))).OrderBy<string, DateTime>((Func<string, DateTime>) (x => new FileInfo(x).LastWriteTime)).ToArray<string>();
+          if (array2.Length > 0)
+          {
+            if (Library.server != null && Library.server.State == MongoServerState.Connected)
+              Library.MonDatabase.Server.Disconnect();
+            if (!Library.connectDBNew(Library._strConnectionString))
+            {
+              Library.WriteLog(Library.strStatusFile, $"Connection failure Folder:{path1.ToString()} file count:{array2.Length.ToString()}");
+              break;
+            }
+          }
+          foreach (string str4 in array2)
+          {
+            try
+            {
+              _strTenantID = "";
+              Thread.Sleep(10);
+              if (Library.server.State == MongoServerState.Disconnected)
+              {
+                Library.MonDatabase.Server.Disconnect();
+                Library.server.Connect();
+                Library.MonDatabase = Library.server.GetDatabase(Library._strDBName);
+              }
+              FileInfo fileInfo = new FileInfo(str4);
+              string filesize = fileInfo.Length.ToString() + " bytes";
+              filename = fileInfo.Name.ToString();
+              string[] strArray2 = filename.Split('_');
+              str2 = strArray2[1];
+              string str5 = strArray2[0];
+              if (!(str5 == "PPE"))
+              {
+                Library.WriteLog(Library.strStatusFile, "Process Started for the file:" + str4);
+                string s1 = "";
+                Library._strfileExtension = Path.GetExtension(str4).Replace(".", "");
+                string[] source1 = new string[3]
+                {
+                  "ZIP",
+                  "RAR",
+                  "7Z"
+                };
+                if (Library._strfileExtension.ToUpper() == "TXT")
+                  s1 = Security.Decrypt(File.ReadAllLines(str4)[0]);
+                else if (((IEnumerable<string>) source1).Any<string>(new Func<string, bool>(Library._strfileExtension.ToUpper().EndsWith)))
+                {
+                  SevenZipBase.SetLibraryPath(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? Environment.CurrentDirectory, "7z64.dll"));
+                  using (SevenZipExtractor sevenZipExtractor = new SevenZipExtractor(str4, "adsr"))
+                  {
+                    string path2 = Path.GetFileName(str4).Replace(Library._strfileExtension, "txt");
+                    string str6 = Path.Combine(Path.GetDirectoryName(str4), "tmpFiles");
+                    if (!Directory.Exists(str6))
+                      Directory.CreateDirectory(str6);
+                    sevenZipExtractor.ExtractArchive(str6);
+                    string path3 = Path.Combine(str6, path2);
+                    string[] strArray3 = File.ReadAllLines(path3);
+                    File.Delete(path3);
+                    if (strArray3.Length > 0)
+                      s1 = strArray3[0];
+                    else
+                      continue;
+                  }
+                }
+                else
+                {
+                  Library.WriteLog(Library.strStatusFile, "Invalid Zip File Format");
+                  return;
+                }
+                JObject jobject = (JObject) JToken.ReadFrom((JsonReader) new JsonTextReader((TextReader) new StringReader(s1)));
+                fileObject fileObject = new fileObject();
+                fileObject_lounge fileObjectLounge = new fileObject_lounge();
+                if (str5 == "PPL")
+                {
+                  fileObjectLounge = jobject.ToObject<fileObject_lounge>();
+                  _strTenantID = fileObjectLounge.Header.TENANT_ID.Trim();
+                }
+                else
+                {
+                  fileObject = jobject.ToObject<fileObject>();
+                  _strTenantID = fileObject.Header.TENANT_ID.Trim();
+                }
+                bool flag1 = false;
+                bool flag2 = false;
+                FileInfoDetails document = new FileInfoDetails();
+                string collectionName = "";
+                string strCollectionName1 = "";
+                string strCollectionName2 = "";
+                if (str5 == "PPI")
+                {
+                  collectionName = "ID_TransactionDetails";
+                  strCollectionName1 = "ID_ItemDetails";
+                  strCollectionName2 = "ID_PaymentDetails";
+                }
+                else if (str5 == "PPE")
+                {
+                  collectionName = "EOD_TransactionDetails";
+                  strCollectionName1 = "EOD_ItemDetails";
+                  strCollectionName2 = "EOD_PaymentDetails";
+                }
+                else if (str5 == "PPP")
+                {
+                  collectionName = "PP_TransactionDetails";
+                  strCollectionName1 = "PP_ItemDetails";
+                  strCollectionName2 = "PP_PaymentDetails";
+                }
+                else if (str5 == "PPH")
+                {
+                  collectionName = "PUSH_TransactionDetails";
+                  strCollectionName1 = "PUSH_ItemDetails";
+                  strCollectionName2 = "PUSH_PaymentDetails";
+                }
+                else if (str5 == "PPL")
+                  collectionName = "LoungeDetails";
+                bool flag3;
+                if (str5 == "PPE")
+                {
+                  flag3 = Library.MonDatabase.GetCollection("EOD_TransactionDetails").Exists();
+                  flag1 = Library.MonDatabase.GetCollection("EOD_ItemDetails").Exists();
+                  flag2 = Library.MonDatabase.GetCollection("EOD_PaymentDetails").Exists();
+                }
+                else if (str5 == "PPL")
+                {
+                  flag3 = Library.MonDatabase.GetCollection("LoungeDetails").Exists();
+                }
+                else
+                {
+                  flag3 = Library.MonDatabase.GetCollection("TransactionDetails").Exists();
+                  flag1 = Library.MonDatabase.GetCollection("ItemDetails").Exists();
+                  flag2 = Library.MonDatabase.GetCollection("PaymentDetails").Exists();
+                }
+                document.NoOfRowsInserted = 0;
+                document.TotInvoiceAmtInserted = 0.0;
+                if (flag3)
+                {
+                  MongoCursor<TenantLeaseInfo> source2 = Library.MonDatabase.GetCollection("TenantLeaseInfo").FindAs<TenantLeaseInfo>(Query.And(Query.EQ("TENANT_ID", (BsonValue) _strTenantID), Query.EQ("Service_Site_ID", (BsonValue) Library._strSiteId)));
+                  source2.SetFields((IMongoFields) Fields.Include("BrandId"));
+                  List<TenantLeaseInfo> list = source2.ToList<TenantLeaseInfo>();
+                  if (list.Count<TenantLeaseInfo>() <= 0)
+                  {
+                    Library.WriteLog(Library.strStatusFile, $"Reading File:{str4} Tenant ID:{_strTenantID} does not exists");
+                    Library.MoveFile(str4, $"{Library._strErrorPath}\\{filename}");
+                    str1 = Library._strErrorPath.Replace(Library._strPath, "").Replace("\\", "/");
+                    continue;
+                  }
+                  Library.brandid = list.FirstOrDefault<TenantLeaseInfo>().BrandId;
+                }
+                else if (str5 == "PPL")
+                {
+                  document.NoOfRowsInserted = Convert.ToInt32(fileObjectLounge.Footer.NO_OF_RECORDS.ToString());
+                  document.TotInvoiceAmtInserted = Convert.ToDouble(fileObjectLounge.Footer.HASH_TOTAL.ToString());
+                }
+                else
+                {
+                  MongoCursor<TenantLeaseInfo> source3 = Library.MonDatabase.GetCollection("TenantLeaseInfo").FindAs<TenantLeaseInfo>(Query.EQ("TENANT_ID", (BsonValue) _strTenantID));
+                  source3.SetFields((IMongoFields) Fields.Include("BrandId"));
+                  Library.brandid = source3.ToList<TenantLeaseInfo>().FirstOrDefault<TenantLeaseInfo>().BrandId;
+                  document.NoOfRowsInserted = Convert.ToInt32(fileObject.Footer.NO_OF_RECORDS.ToString());
+                  document.TotInvoiceAmtInserted = Convert.ToDouble(fileObject.Footer.HASH_TOTAL.ToString());
+                }
+                List<BsonDocument> bsonDocumentList1 = new List<BsonDocument>();
+                List<TransactionDetails> source4 = new List<TransactionDetails>();
+                List<BsonDocument> bsonDocumentList2 = new List<BsonDocument>();
+                List<BsonDocument> bsonDocumentList3 = new List<BsonDocument>();
+                int num1 = 1;
+                double num2 = 0.0;
+                Library.strPrimaryDataCaptureType = "";
+                Library.strSecondaryDataCaptureType = "";
+                Library.GetDatacaptureType(_strTenantID);
+                string str7 = "";
+                long num3;
+                int num4;
+                if (str5 != "PPL")
+                {
+                  foreach (int num5 in fileObject.Header.TRANS_DATE)
+                  {
+                    int trandt = num5;
+                    int int32_1 = Convert.ToInt32(trandt.ToString().Substring(0, 6).ToString());
+                    if (Library.GetAuditStatus(_strTenantID, int32_1, Library._strSiteId) == 1)
+                    {
+                      Library.WriteLog(Library.strStatusFile, $"Reading File:{str4}; Auditing Completed for the business date:{trandt.ToString()}");
+                      Library.MoveFile(str4, $"{Library._strErrorPath}\\{filename}");
+                    }
+                    else
+                    {
+                      foreach (Transactions transactions in ((IEnumerable<Transactions>) fileObject.Transactions).Where<Transactions>((Func<Transactions, bool>) (s => s.RCPT_DT == trandt)).ToArray<Transactions>())
+                      {
+                        Transactions trans = transactions;
+                        DateTime now = DateTime.Now;
+                        if (!(trans.TRAN_STATUS.Trim() == "SALES") && !(trans.TRAN_STATUS.Trim() == "RETURN"))
+                        {
+                          Library.WriteLogtoDB(str5, "Intra", _strTenantID, Convert.ToInt32(fileObject.Header.FILE_CR_DT), Convert.ToInt32(fileObject.Header.FILE_CR_TM), fileObject.Header.TRANS_DATE, filename, 0, 0, 0.0, 0.0, "InvalidData", "Invalid Transaction Status-" + trans.TRAN_STATUS.Trim(), "InProgress", "Import", filesize, "-NA-");
+                        }
+                        else
+                        {
+                          int int32_2 = Convert.ToInt32(DateTime.Today.ToString("yyyyMMdd"));
+                          if (trans.RCPT_DT > int32_2)
+                          {
+                            str7 = !(str7 == "") ? $"{str7},{trans.RCPT_NUM}" : "Duplicate Record in Primary Collection -" + trans.RCPT_NUM;
+                          }
+                          else
+                          {
+                            if (!(str7.Trim() != ""))
+                              ;
+                            str7 = "";
+                            num3 = 0L;
+                            num4 = 0;
+                            int activeStatus = Library.GetActiveStatus(_strTenantID, trans.RCPT_DT);
+                            num3 = 0L;
+                            if (source4 != null)
+                            {
+                              if (source4.Where<TransactionDetails>((Func<TransactionDetails, bool>) (x => x.RECEIPT_NO.Equals(trans.RCPT_NUM) && x.RECEIPT_DATE.Equals(trans.RCPT_DT) && x.RECEIPT_TIME.Equals(trans.RCPT_TM) && x.TRANS_STATUS.Equals(trans.TRAN_STATUS) && x.TERMINAL_ID.Equals(trans.TERMINAL_ID) && x.TENANT_ID.Equals(_strTenantID))).Count<TransactionDetails>() > 0)
+                              {
+                                str7 = !(str7 == "") ? $"{str7},{trans.RCPT_NUM}" : "Duplicate Record in Same File -" + trans.RCPT_NUM;
+                                continue;
+                              }
+                              if (!(str7.Trim() != ""))
+                                ;
+                              str7 = "";
+                            }
+                            Regex regex = new Regex("^[0-9.]+$");
+                            if (!(trans.RCPT_NUM == ""))
+                            {
+                              TransactionDetails transactionDetails = new TransactionDetails();
+                              UpdateBuilder update = Update.Set("TENANT_ID", (BsonValue) _strTenantID);
+                              update.Set("REC_TYPE", (BsonValue) trans.REC_TYPE);
+                              update.Set("SITE_ID", (BsonValue) Library._strSiteId);
+                              update.Set("LOCATION_CODE", (BsonValue) trans.LOCATION_CODE);
+                              update.Set("SHIFT_NO", (BsonValue) trans.SHIFT_NO);
+                              update.Set("TERMINAL_ID", (BsonValue) trans.TERMINAL_ID);
+                              update.Set("RECEIPT_NO", (BsonValue) trans.RCPT_NUM);
+                              update.Set("RECEIPT_DATE", (BsonValue) Convert.ToInt32(trans.RCPT_DT));
+                              update.Set("RECEIPT_DAY", (BsonValue) Convert.ToInt32(trans.RCPT_DT.ToString().Substring(6, 2).ToString()));
+                              UpdateBuilder updateBuilder1 = update;
+                              int rcptDt = trans.RCPT_DT;
+                              BsonValue int32_3 = (BsonValue) Convert.ToInt32(rcptDt.ToString().Substring(4, 2).ToString());
+                              updateBuilder1.Set("RECEIPT_MONTH", int32_3);
+                              UpdateBuilder updateBuilder2 = update;
+                              rcptDt = trans.RCPT_DT;
+                              BsonValue int32_4 = (BsonValue) Convert.ToInt32(rcptDt.ToString().Substring(0, 4).ToString());
+                              updateBuilder2.Set("RECEIPT_YEAR", int32_4);
+                              UpdateBuilder updateBuilder3 = update;
+                              rcptDt = trans.RCPT_DT;
+                              BsonValue int32_5 = (BsonValue) Convert.ToInt32(rcptDt.ToString().Substring(0, 6).ToString());
+                              updateBuilder3.Set("RECEIPT_MONTH_YEAR", int32_5);
+                              update.Set("RECEIPT_TIME", (BsonValue) trans.RCPT_TM);
+                              update.Set("RECEIPT_HOUR", (BsonValue) Convert.ToInt32(trans.RCPT_TM.ToString().Substring(0, 2).ToString()));
+                              update.Set("RECEIPT_MINUTE", (BsonValue) Convert.ToInt32(trans.RCPT_TM.ToString().Substring(2, 2).ToString()));
+                              update.Set("RECEIPT_SECONDS", (BsonValue) Convert.ToInt32(trans.RCPT_TM.ToString().Substring(4, 2).ToString()));
+                              rcptDt = trans.RCPT_DT;
+                              int weekyear = Convert.ToInt32(rcptDt.ToString().Substring(0, 4).ToString());
+                              UpdateBuilder updateBuilder4 = update;
+                              rcptDt = trans.RCPT_DT;
+                              BsonValue isoWeekOfYear = (BsonValue) Library.GetISOWeekOfYear(rcptDt.ToString(), out weekyear);
+                              updateBuilder4.Set("WEEKNUMBER", isoWeekOfYear);
+                              update.Set("WEEK_YEAR", (BsonValue) weekyear);
+                              update.Set("BUSINESS_DT", (BsonValue) trans.BUSINESS_DT);
+                              update.Set("DISCOUNT", (BsonValue) Convert.ToDouble(trans.DISCOUNT));
+                              update.Set("TRANS_STATUS", (BsonValue) trans.TRAN_STATUS.Trim());
+                              if (trans.TRAN_STATUS.Trim() == "SALES")
+                              {
+                                update.Set("INV_AMT", (BsonValue) Convert.ToDouble(trans.INV_AMT));
+                                update.Set("TAX_AMT", (BsonValue) Convert.ToDouble(trans.TAX_AMT));
+                                update.Set("NET_SALES", (BsonValue) (Convert.ToDouble(trans.INV_AMT) - Convert.ToDouble(trans.TAX_AMT)));
+                              }
+                              else if (trans.TRAN_STATUS.Trim() == "RETURN")
+                              {
+                                update.Set("RET_AMT", (BsonValue) Convert.ToDouble(Convert.ToString(trans.RET_AMT)));
+                                update.Set("RET_TAX_AMT", (BsonValue) Convert.ToDouble(trans.TAX_AMT));
+                                update.Set("NET_SALES", (BsonValue) (-1.0 * (Math.Abs(Convert.ToDouble(trans.RET_AMT)) - Convert.ToDouble(trans.TAX_AMT))));
+                              }
+                              if (transactionDetails.GetType().GetProperty("SERVICECHARGE") != (PropertyInfo) null && trans.GetType().GetProperty("SERCHARGE_AMT") != (PropertyInfo) null && trans.SERCHARGE_AMT != null)
+                                update.Set("SERVICECHARGE", (BsonValue) (trans.SERCHARGE_AMT.Trim() == "" ? 0.0 : Convert.ToDouble(trans.SERCHARGE_AMT)));
+                              update.Set("Operation_Currency", (BsonValue) trans.OP_CUR);
+                              if (regex.IsMatch(trans.BC_EXCH))
+                                update.Set("BaseCurrency_Exchange", (BsonValue) Convert.ToDouble(trans.BC_EXCH));
+                              else
+                                update.Set("BaseCurrency_Exchange", (BsonValue) 1);
+                              update.Set("DataFlowType", (BsonValue) str5);
+                              update.Set("FileName", (BsonValue) filename);
+                              update.Set("ACTIVE", (BsonValue) activeStatus);
+                              update.Set("BrandId", (BsonValue) Library.brandid);
+                              UpdateBuilder updateBuilder5 = update;
+                              string str8 = _strTenantID;
+                              rcptDt = trans.RCPT_DT;
+                              string str9 = rcptDt.ToString();
+                              string rcptNum = trans.RCPT_NUM;
+                              BsonValue bsonValue = (BsonValue) (str8 + str9 + rcptNum);
+                              updateBuilder5.Set("TENANT_RECEIPT_ID", bsonValue);
+                              update.Set("CUM_STATUS", (BsonValue) 0);
+                              if (trans.GetType().GetProperty("CustomerMobileNo") != (PropertyInfo) null && trans.CustomerMobileNo != null)
+                                update.Set("Customer.CustomerMobileNo", (BsonValue) trans.CustomerMobileNo.Trim());
+                              if (trans.GetType().GetProperty("CustomerID") != (PropertyInfo) null && trans.CustomerID != null)
+                                update.Set("Customer.CustomerID", (BsonValue) trans.CustomerID.Trim());
+                              if (trans.GetType().GetProperty("OfferCode") != (PropertyInfo) null && trans.OfferCode != null)
+                                update.Set("Customer.OfferCode", (BsonValue) trans.OfferCode.Trim());
+                              if (trans.GetType().GetProperty("GiftVoucherNo") != (PropertyInfo) null && trans.GiftVoucherNo != null)
+                                update.Set("Customer.GiftVoucherNo", (BsonValue) trans.GiftVoucherNo.Trim());
+                              update.Set("updated_at", (BsonValue) now);
+                              CustomerDetails customerDetails = new CustomerDetails();
+                              update.Set("Customer.CUST_NAME", (BsonValue) trans.CUST_NAME);
+                              update.Set("Customer.CUST_GENDER", (BsonValue) trans.CUST_GEN);
+                              update.Set("Customer.CUST_NATION", (BsonValue) trans.CUST_NATION);
+                              update.Set("Customer.CUST_EMAIL", (BsonValue) trans.CUST_EMAIL);
+                              update.Set("Customer.CUST_CONT", (BsonValue) trans.CUST_CONT);
+                              update.Set("Customer.CUST_PP_NO", (BsonValue) trans.CUST_PP_NO);
+                              update.Set("Customer.CUST_BP_NO", (BsonValue) trans.CUST_BP);
+                              update.Set("Customer.CUST_FL_NO", (BsonValue) trans.CUST_FL_NO);
+                              update.Set("Customer.CUST_PAX_TYPE", (BsonValue) trans.CUST_PAX_TYPE);
+                              update.Set("Customer.CUST_FL_CLASS", (BsonValue) trans.CUST_FL_CLASS);
+                              update.Set("Customer.CUST_BR_GATE_NO", (BsonValue) trans.CUST_BR_GATE_NO);
+                              update.Set("Customer.CUST_PNR_NO", (BsonValue) trans.CUST_PNR_NO);
+                              update.Set("Customer.CUST_DESTINATION", (BsonValue) trans.CUST_DESTINATION);
+                              update.Set("Customer.CUST_ORIGIN", (BsonValue) trans.CUST_ORIGIN);
+                              update.Set("Customer.VOUCH_CODE", (BsonValue) trans.VOUCH_CODE);
+                              update.Set("Customer.DATE_OF_DEPARTURE", (BsonValue) trans.DATE_OF_DEPARTURE);
+                              if (Library._strDBName.ToUpper() == "GHIAL_HYDDB")
+                                update.Set("SALESPERSON", (BsonValue) trans.SALESPERSON);
+                              List<BsonDocument> bsonDocumentList4 = new List<BsonDocument>();
+                              if (str3 == "1")
+                              {
+                                foreach (ItemDetail itemDetail in trans.ItemDetail)
+                                {
+                                  if (!(itemDetail.RCPT_NUM.Trim() == ""))
+                                  {
+                                    ItemDetails itemDetails = new ItemDetails();
+                                    itemDetails.SITE_ID = Library._strSiteId;
+                                    itemDetails.TENANT_ID = _strTenantID;
+                                    itemDetails.POS_TILL = trans.TERMINAL_ID;
+                                    itemDetails.REC_TYPE = itemDetail.REC_TYPE;
+                                    itemDetails.RECEIPT_NO = itemDetail.RCPT_NUM;
+                                    itemDetails.RECEIPT_DATE = Convert.ToInt32(itemDetail.RCPT_DT);
+                                    itemDetails.RECEIPT_DAY = Convert.ToInt32(itemDetail.RCPT_DT.Substring(6, 2).ToString());
+                                    itemDetails.RECEIPT_MONTH = Convert.ToInt32(itemDetail.RCPT_DT.Substring(4, 2).ToString());
+                                    itemDetails.RECEIPT_YEAR = Convert.ToInt32(itemDetail.RCPT_DT.Substring(0, 4).ToString());
+                                    itemDetails.RECEIPT_TIME = trans.RCPT_TM;
+                                    itemDetails.RECEIPT_HOUR = Convert.ToInt32(trans.RCPT_TM.ToString().Substring(0, 2).ToString());
+                                    itemDetails.RECEIPT_MINUTE = Convert.ToInt32(trans.RCPT_TM.ToString().Substring(2, 2).ToString());
+                                    itemDetails.RECEIPT_SECONDS = Convert.ToInt32(trans.RCPT_TM.ToString().Substring(4, 2).ToString());
+                                    itemDetails.SHIFT_NO = trans.SHIFT_NO;
+                                    itemDetails.BUSINESS_DT = trans.BUSINESS_DT;
+                                    itemDetails.ITEM_CAT = itemDetail.ITEM_CAT;
+                                    itemDetails.ITEM_CODE = itemDetail.ITEM_CODE;
+                                    itemDetails.ITEM_NAME = itemDetail.ITEM_NAME;
+                                    itemDetails.ITEM_PRICE = Convert.ToDouble(itemDetail.ITEM_PRICE);
+                                    itemDetails.ITEM_QTY = Convert.ToDouble(itemDetail.ITEM_QTY);
+                                    itemDetails.ITEM_TAX = Convert.ToDouble(itemDetail.ITEM_TAX);
+                                    itemDetails.ITEM_NET_AMT = Convert.ToDouble(itemDetail.ITEM_NET_AMT);
+                                    itemDetails.BC_EXCH = Convert.ToDouble(itemDetail.BC_EXCH);
+                                    itemDetails.ITEM_TAX_TYPE = itemDetail.ITEM_TAX_TYPE;
+                                    itemDetails.OP_CUR = itemDetail.OP_CUR;
+                                    itemDetails.ITEM_STATUS = itemDetail.ITEM_STATUS;
+                                    itemDetails.TENANT_RECEIPT_ID = _strTenantID + itemDetail.RCPT_DT.ToString() + itemDetail.RCPT_NUM;
+                                    itemDetails.CUM_STATUS = 0;
+                                    itemDetails.updated_at = now;
+                                    if (Library._strDBName.ToUpper() == "GHIAL_HYDDB")
+                                    {
+                                      itemDetails.DEPARTMENT = itemDetail.DEPARTMENT;
+                                      itemDetails.HSNCODE = itemDetail.HSNCODE;
+                                      itemDetails.SUBCATEGORY = itemDetail.SUBCATEGORY;
+                                      itemDetails.SALESPERSON = itemDetail.SALESPERSON;
+                                    }
+                                    bsonDocumentList4.Add(itemDetails.ToBsonDocument<ItemDetails>());
+                                  }
+                                }
+                              }
+                              List<BsonDocument> bsonDocumentList5 = new List<BsonDocument>();
+                              foreach (PaymentDetail paymentDetail in trans.PaymentDetail)
+                              {
+                                if (!(paymentDetail.RCPT_NUM.Trim() == ""))
+                                  bsonDocumentList5.Add(new PaymentDetails()
+                                  {
+                                    SITE_ID = Library._strSiteId,
+                                    TENANT_ID = _strTenantID,
+                                    POS_TILL = trans.TERMINAL_ID,
+                                    REC_TYPE = paymentDetail.REC_TYPE,
+                                    RECEIPT_NO = paymentDetail.RCPT_NUM,
+                                    RECEIPT_DATE = Convert.ToInt32(paymentDetail.RCPT_DT),
+                                    RECEIPT_DAY = Convert.ToInt32(paymentDetail.RCPT_DT.Substring(6, 2).ToString()),
+                                    RECEIPT_MONTH = Convert.ToInt32(paymentDetail.RCPT_DT.Substring(4, 2).ToString()),
+                                    RECEIPT_YEAR = Convert.ToInt32(paymentDetail.RCPT_DT.Substring(0, 4).ToString()),
+                                    RECEIPT_TIME = trans.RCPT_TM,
+                                    RECEIPT_HOUR = Convert.ToInt32(trans.RCPT_TM.ToString().Substring(0, 2).ToString()),
+                                    RECEIPT_MINUTE = Convert.ToInt32(trans.RCPT_TM.ToString().Substring(2, 2).ToString()),
+                                    RECEIPT_SECONDS = Convert.ToInt32(trans.RCPT_TM.ToString().Substring(4, 2).ToString()),
+                                    SHIFT_NO = trans.SHIFT_NO,
+                                    BUSINESS_DT = trans.BUSINESS_DT,
+                                    PAYMENT_NAME = paymentDetail.PAYMENT_NAME,
+                                    CURRENCY_CODE = paymentDetail.CURRENCY_CODE,
+                                    BC_EXCH = (!regex.IsMatch(paymentDetail.BC_EXCH) ? 1.0 : Convert.ToDouble(paymentDetail.BC_EXCH)),
+                                    TENDER_AMOUNT = (!regex.IsMatch(paymentDetail.TENDER_AMOUNT) ? 1.0 : Convert.ToDouble(paymentDetail.TENDER_AMOUNT)),
+                                    EXCHANGE_RATE = (!regex.IsMatch(paymentDetail.EXCHANGE_RATE) ? 1.0 : Convert.ToDouble(paymentDetail.EXCHANGE_RATE)),
+                                    OP_CUR = paymentDetail.OP_CUR,
+                                    PAYMENT_STATUS = paymentDetail.PAYMENT_STATUS,
+                                    TENANT_RECEIPT_ID = (_strTenantID + paymentDetail.RCPT_DT.ToString() + paymentDetail.RCPT_NUM),
+                                    CUM_STATUS = 0,
+                                    updated_at = now
+                                  }.ToBsonDocument<PaymentDetails>());
+                              }
+                              if (Library.strPrimaryDataCaptureType == "Pos Patrol | Integra" && str5 == "PPI" || Library.strPrimaryDataCaptureType == "Pos Patrol | Push" && str5 == "PPH" || Library.strPrimaryDataCaptureType == "Pos Patrol | Print" && str5 == "PPP")
+                              {
+                                IMongoQuery query = Query.And(Query.EQ("SITE_ID", (BsonValue) Library._strSiteId), Query.EQ("TENANT_ID", (BsonValue) _strTenantID), Query.EQ("RECEIPT_DATE", (BsonValue) trans.RCPT_DT), Query.EQ("RECEIPT_NO", (BsonValue) trans.RCPT_NUM), Query.EQ("RECEIPT_TIME", (BsonValue) trans.RCPT_TM), Query.EQ("TRANS_STATUS", (BsonValue) trans.TRAN_STATUS), Query.EQ("TERMINAL_ID", (BsonValue) trans.TERMINAL_ID));
+                                try
+                                {
+                                  Library.MonDatabase.GetCollection("TransactionDetails").Update(query, (IMongoUpdate) update, UpdateFlags.Upsert);
+                                  document.NoOfRowsInserted = num1;
+                                  ++num1;
+                                  num2 += Convert.ToDouble(trans.INV_AMT);
+                                  document.TotInvoiceAmtInserted = num2;
+                                  if (str3 == "1")
+                                    Library.UpsertItemDetails("ItemDetails", (object) trans, _strTenantID, now, "NO");
+                                  Library.UpsertPaymentDetails(trans.PaymentDetail, trans.RCPT_TM, trans.TERMINAL_ID, trans.SHIFT_NO, trans.BUSINESS_DT, _strTenantID, now, "PaymentDetails");
+                                }
+                                catch (Exception ex)
+                                {
+                                  if (!ex.Message.Contains("The _id field cannot be changed from"))
+                                    ;
+                                  if (!ex.Message.Contains("duplicate key error collection"))
+                                    Library.WriteLog(Library.strErrorFile, $"Primary Record:{trans.RCPT_NUM};Error -File:{filename}==>{ex.Message.ToString()}");
+                                }
+                              }
+                              try
+                              {
+                                IMongoQuery query = Query.And(Query.EQ("SITE_ID", (BsonValue) Library._strSiteId), Query.EQ("TENANT_ID", (BsonValue) _strTenantID), Query.EQ("RECEIPT_DATE", (BsonValue) trans.RCPT_DT), Query.EQ("RECEIPT_NO", (BsonValue) trans.RCPT_NUM), Query.EQ("RECEIPT_TIME", (BsonValue) trans.RCPT_TM), Query.EQ("TRANS_STATUS", (BsonValue) trans.TRAN_STATUS), Query.EQ("TERMINAL_ID", (BsonValue) trans.TERMINAL_ID));
+                                Library.MonDatabase.GetCollection(collectionName).Update(query, (IMongoUpdate) update, UpdateFlags.Upsert);
+                                document.NoOfRowsInserted = num1;
+                                ++num1;
+                                num2 += Convert.ToDouble(trans.INV_AMT);
+                                document.TotInvoiceAmtInserted = num2;
+                                if (str3 == "1")
+                                  Library.UpsertItemDetails(strCollectionName1, (object) trans, _strTenantID, now, "NO");
+                                Library.UpsertPaymentDetails(trans.PaymentDetail, trans.RCPT_TM, trans.TERMINAL_ID, trans.SHIFT_NO, trans.BUSINESS_DT, _strTenantID, now, strCollectionName2);
+                              }
+                              catch (Exception ex)
+                              {
+                                if (!ex.Message.Contains("The _id field cannot be changed from"))
+                                  ;
+                                if (!ex.Message.Contains("duplicate key error collection"))
+                                  Library.WriteLog(Library.strErrorFile, $"Sec Record:{trans.RCPT_NUM};Error -File:{filename}==>{ex.Message.ToString()}");
+                              }
+                            }
+                          }
+                        }
+                      }
+                      document.NoOfRowsInserted = num1;
+                      document.TotInvoiceAmtInserted = num2;
+                    }
+                  }
+                }
+                else if (str5 == "PPL")
+                {
+                  List<LoungeDetails> loungeDetailsList = new List<LoungeDetails>();
+                  foreach (LoungeTransactions transaction in fileObjectLounge.Transactions)
+                  {
+                    LoungeTransactions trans = transaction;
+                    DateTime now = DateTime.Now;
+                    num3 = 0L;
+                    if (Library.GetCount(str5, _strTenantID, trans.RCPT_TM, trans.TRAN_STATUS, trans.TERMINAL_ID, Convert.ToInt32(trans.RCPT_DT), trans.RCPT_NUM) > 0L)
+                    {
+                      str7 = !(str7 == "") ? $"{str7},{trans.RCPT_NUM}" : "Duplicate Record Lounge -" + trans.RCPT_NUM;
+                    }
+                    else
+                    {
+                      str7 = "";
+                      num4 = 0;
+                      int activeStatus = Library.GetActiveStatus(_strTenantID, Convert.ToInt32(trans.RCPT_DT));
+                      num3 = 0L;
+                      if (loungeDetailsList == null || loungeDetailsList.Where<LoungeDetails>((Func<LoungeDetails, bool>) (x => x.RECEIPT_NO.Equals(trans.RCPT_NUM) && x.RECEIPT_DATE.Equals((object) trans.RCPT_DT) && x.RECEIPT_TIME.Equals(trans.RCPT_TM) && x.TRAN_STATUS.Equals(trans.TRAN_STATUS) && x.TERMINAL_ID.Equals(trans.TERMINAL_ID) && x.TENANT_ID.Equals(_strTenantID))).Count<LoungeDetails>() <= 0)
+                      {
+                        Regex regex = new Regex("^[0-9.]+$");
+                        if (!(trans.RCPT_NUM == ""))
+                        {
+                          LoungeDetails loungeDetails = new LoungeDetails();
+                          loungeDetails.REC_TYPE = trans.REC_TYPE;
+                          loungeDetails.TENANT_ID = _strTenantID;
+                          loungeDetails.SITE_ID = Library._strSiteId;
+                          loungeDetails.LOCATION_CODE = trans.LOCATION_CODE;
+                          loungeDetails.SHIFT_NO = trans.SHIFT_NO;
+                          loungeDetails.TERMINAL_ID = trans.TERMINAL_ID;
+                          loungeDetails.RECEIPT_NO = trans.RCPT_NUM;
+                          loungeDetails.RECEIPT_DATE = Convert.ToInt32(trans.RCPT_DT);
+                          loungeDetails.RECEIPT_DAY = Convert.ToInt32(trans.RCPT_DT.ToString().Substring(6, 2).ToString());
+                          loungeDetails.RECEIPT_MONTH = Convert.ToInt32(trans.RCPT_DT.ToString().Substring(4, 2).ToString());
+                          loungeDetails.RECEIPT_YEAR = Convert.ToInt32(trans.RCPT_DT.ToString().Substring(0, 4).ToString());
+                          loungeDetails.RECEIPT_MONTH_YEAR = Convert.ToInt32(trans.RCPT_DT.ToString().Substring(0, 6).ToString());
+                          loungeDetails.RECEIPT_TIME = trans.RCPT_TM;
+                          loungeDetails.RECEIPT_HOUR = Convert.ToInt32(trans.RCPT_TM.ToString().Substring(0, 2).ToString());
+                          loungeDetails.RECEIPT_MINUTE = Convert.ToInt32(trans.RCPT_TM.ToString().Substring(2, 2).ToString());
+                          loungeDetails.RECEIPT_SECONDS = Convert.ToInt32(trans.RCPT_TM.ToString().Substring(4, 2).ToString());
+                          int receiptYear = loungeDetails.RECEIPT_YEAR;
+                          loungeDetails.DISCOUNT = Convert.ToDouble(trans.DISCOUNT);
+                          loungeDetails.TRAN_STATUS = trans.TRAN_STATUS;
+                          if (trans.TRAN_STATUS.Trim() == "SALES")
+                          {
+                            loungeDetails.INV_AMT = Convert.ToDouble(trans.INV_AMT);
+                            loungeDetails.TAX_AMT = Convert.ToDouble(trans.TAX_AMT);
+                            loungeDetails.NET_SALES = Convert.ToDouble(trans.INV_AMT) - Convert.ToDouble(trans.TAX_AMT);
+                          }
+                          else if (trans.TRAN_STATUS.Trim() == "RETURN")
+                          {
+                            loungeDetails.RET_AMT = Convert.ToDouble(Convert.ToString(trans.RET_AMT));
+                            loungeDetails.RET_TAX_AMT = Convert.ToDouble(trans.TAX_AMT);
+                            loungeDetails.NET_SALES = -1.0 * (Math.Abs(Convert.ToDouble(trans.RET_AMT)) - Convert.ToDouble(trans.TAX_AMT));
+                          }
+                          loungeDetails.OPERATION_CURRENCY = trans.OP_CUR;
+                          loungeDetails.BASECURRENCY_EXCHANGE = !regex.IsMatch(trans.BC_EXCH) ? 1.0 : Convert.ToDouble(trans.BC_EXCH);
+                          loungeDetails.AIRLINE_NAME = trans.AIRLINE_NAME;
+                          loungeDetails.ALLIANCE_MEMBER = trans.ALLIANCE_MEMBER;
+                          try
+                          {
+                            loungeDetails.COUNT = Convert.ToInt32(trans.COUNT);
+                          }
+                          catch
+                          {
+                            loungeDetails.COUNT = 0;
+                          }
+                          loungeDetails.DATAFLOWTYPE = str5;
+                          loungeDetails.FILENAME = filename;
+                          loungeDetails.ACTIVE = activeStatus;
+                          loungeDetails.UPDATED_AT = now;
+                          loungeDetails.CUST_NAME = trans.CUST_NAME;
+                          loungeDetails.CUST_GENDER = trans.CUST_GEN;
+                          loungeDetails.CUST_NATION = trans.CUST_NATION;
+                          loungeDetails.CUST_EMAIL = trans.CUST_EMAIL;
+                          loungeDetails.CUST_CONT = trans.CUST_CONT;
+                          loungeDetails.CUST_PP_NO = trans.CUST_PP_NO;
+                          loungeDetails.CUST_BP_NO = trans.CUST_BP;
+                          loungeDetails.CUST_FL_NO = trans.CUST_FL_NO;
+                          loungeDetails.CUST_PAX_TYPE = trans.CUST_PAX_TYPE;
+                          loungeDetails.CUST_FL_CLASS = trans.CUST_FL_CLASS;
+                          loungeDetails.CUST_BR_GATE_NO = trans.CUST_BR_GATE_NO;
+                          loungeDetails.CUST_PNR_NO = trans.CUST_PNR_NO;
+                          loungeDetails.CUST_DESTINATION = trans.CUST_DESTINATION;
+                          loungeDetails.CUST_ORIGIN = trans.CUST_ORIGIN;
+                          loungeDetails.VOUCH_CODE = trans.VOUCH_CODE;
+                          loungeDetails.CONTRACT_NAME = trans.CONTRACT_NAME;
+                          loungeDetails.CUST_TYPE = trans.CUST_TYPE;
+                          loungeDetails.DATE_OF_DEPARTURE = trans.DATE_OF_DEPARTURE;
+                          document.NoOfRowsInserted = num1;
+                          ++num1;
+                          num2 += Convert.ToDouble(trans.INV_AMT);
+                          document.TotInvoiceAmtInserted = num2;
+                          loungeDetailsList.Add(loungeDetails);
+                        }
+                      }
+                    }
+                  }
+                  document.RecType = fileObjectLounge.Header.REC_TYPE;
+                  document.FileType = fileObjectLounge.Header.FILE_TYPE;
+                  document.SiteId = Library._strSiteId;
+                  document.TenantId = _strTenantID;
+                  document.FileCreatedDate = fileObjectLounge.Header.FILE_CR_DT;
+                  document.FileCreatedTime = fileObjectLounge.Header.FILE_CR_TM;
+                  document.TRANS_DATE = fileObjectLounge.Header.TRANS_DATE;
+                  document.FileSeqNumber = fileObjectLounge.Header.FILE_SEQ_NUM;
+                  document.FileName = fileObjectLounge.Header.File_Name;
+                  document.NoOfRowsReceived = Convert.ToInt32(fileObjectLounge.Footer.NO_OF_RECORDS.ToString());
+                  document.TotInvoiceAmtReceived = Convert.ToDouble(fileObjectLounge.Footer.HASH_TOTAL.ToString());
+                  try
+                  {
+                    if (loungeDetailsList.Count > 0)
+                      Library.MonDatabase.GetCollection<LoungeDetails>("LoungeDetails").InsertBatch((IEnumerable<LoungeDetails>) loungeDetailsList);
+                    str1 = sfolder.Replace(Library._strPath, "").Replace("\\", "/");
+                    Library.WriteLog(Library.strStatusFile, "Lounge DataImport completed at " + (object) DateTime.Now);
+                  }
+                  catch (Exception ex)
+                  {
+                    Library.WriteLog(Library.strStatusFile, $"Lounge DataImport Error: {(object) DateTime.Now}{Environment.NewLine}{ex.Message}");
+                  }
+                }
+                try
+                {
+                  DateTime now = DateTime.Now;
+                  Library.MonDatabase.GetCollection<FileInfoDetails>("FileInfoDetails").Insert<FileInfoDetails>(document);
+                  Library.WriteLog(Library.strStatusFile, "DataImport completed at " + (object) DateTime.Now);
+                  Library.bimportStatus = true;
+                }
+                catch (Exception ex)
+                {
+                  str1 = Library._strErrorPath.Replace(Library._strPath, "").Replace("\\", "/");
+                  if (!ex.Message.Contains("Invalid archive") && !ex.Message.Contains("SevenZipSharp") && !ex.Message.Contains("open/read error"))
+                  {
+                    Library.WriteLog(Library.strErrorFile, $"Error: Occured for the file:{filename}==>{ex.ToString()}");
+                    Library.bimportStatus = false;
+                  }
+                  else
+                    continue;
+                }
+                if (Library.bimportStatus)
+                {
+                  str1 = sfolder.Replace(Library._strPath, "").Replace("\\", "/");
+                  if (!(str5 != "PPL"))
+                    ;
+                  Library.MoveFile(str4, $"{sfolder}\\{filename}");
+                  Library.WriteLog(Library.strStatusFile, "Process Completed for the file:" + filename);
+                }
+                else
+                {
+                  Library.MoveFile(str4, $"{Library._strErrorPath}\\{filename}");
+                  Library.WriteLog(Library.strStatusFile, "Error Occured for the file:" + filename);
+                }
+                Library.MonDatabase.Server.Disconnect();
+              }
+            }
+            catch (Exception ex)
+            {
+              str1 = Library._strErrorPath.Replace(Library._strPath, "").Replace("\\", "/");
+              if (!ex.Message.Contains("Invalid archive") && !ex.Message.Contains("SevenZipSharp") && !ex.Message.Contains("open/read error"))
+              {
+                if (!ex.Message.Contains("The process cannot access the file"))
+                {
+                  if (!ex.Message.Contains("Padding is invalid"))
+                  {
+                    str1 = Library._strErrorPath.Replace(Library._strPath, "").Replace("\\", "/");
+                    Library.WriteLog(Library.strStatusFile, $"Error2 Occured for the file:{filename} ==>{ex.Message}");
+                    Library.MoveFile(str4, $"{Library._strErrorPath}\\{filename}");
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    catch (Exception ex)
+    {
+      Library.WriteLogtoDB("", "Intra", "COMMON", 0, 0, new int[1], "-NA-", 0, 0, 0.0, 0.0, "Error", "Error-" + ex.Message, "InComplete", "FileFormat", "-NA-", "-NA-");
+      Library.WriteLog(Library.strErrorFile, "Error Occured:" + ex.ToString());
+    }
+  }
+
+  private static void UpsertItemDetails(
+    string strCollectionName,
+    object tran,
+    string _strTenantID,
+    DateTime timestamp_,
+    string isFrx)
+  {
+    try
+    {
+      switch (isFrx)
+      {
+        case "NO":
+          Transactions transactions = (Transactions) tran;
+          foreach (ItemDetail itemDetail in transactions.ItemDetail)
+          {
+            if (!(itemDetail.RCPT_NUM.Trim() == ""))
+            {
+              IMongoQuery query = Query.And(Query.EQ("SITE_ID", (BsonValue) Library._strSiteId), Query.EQ("TENANT_ID", (BsonValue) _strTenantID), Query.EQ("RECEIPT_DATE", (BsonValue) transactions.RCPT_DT), Query.EQ("RECEIPT_NO", (BsonValue) itemDetail.RCPT_NUM), Query.EQ("RECEIPT_TIME", (BsonValue) transactions.RCPT_TM), Query.EQ("ITEM_NAME", (BsonValue) itemDetail.ITEM_NAME), Query.EQ("ITEM_STATUS", (BsonValue) itemDetail.ITEM_STATUS), Query.EQ("ITEM_CODE", (BsonValue) itemDetail.ITEM_CODE), Query.EQ("ITEM_CAT", (BsonValue) itemDetail.ITEM_CAT), Query.EQ("ITEM_QTY", (BsonValue) itemDetail.ITEM_QTY), Query.EQ("ITEM_NET_AMT", (BsonValue) itemDetail.ITEM_NET_AMT), Query.EQ("ITEM_PRICE", (BsonValue) itemDetail.ITEM_PRICE));
+              UpdateBuilder update = Update.Set("SITE_ID", (BsonValue) Library._strSiteId);
+              update.Set("TENANT_ID", (BsonValue) _strTenantID);
+              update.Set("POS_TILL", (BsonValue) transactions.TERMINAL_ID);
+              update.Set("REC_TYPE", (BsonValue) itemDetail.REC_TYPE);
+              update.Set("RECEIPT_NO", (BsonValue) itemDetail.RCPT_NUM);
+              update.Set("RECEIPT_DATE", (BsonValue) Convert.ToInt32(itemDetail.RCPT_DT));
+              update.Set("RECEIPT_DAY", (BsonValue) Convert.ToInt32(itemDetail.RCPT_DT.Substring(6, 2).ToString()));
+              update.Set("RECEIPT_MONTH", (BsonValue) Convert.ToInt32(itemDetail.RCPT_DT.Substring(4, 2).ToString()));
+              update.Set("RECEIPT_YEAR", (BsonValue) Convert.ToInt32(itemDetail.RCPT_DT.Substring(0, 4).ToString()));
+              update.Set("RECEIPT_TIME", (BsonValue) transactions.RCPT_TM);
+              update.Set("RECEIPT_HOUR", (BsonValue) Convert.ToInt32(transactions.RCPT_TM.ToString().Substring(0, 2).ToString()));
+              update.Set("RECEIPT_MINUTE", (BsonValue) Convert.ToInt32(transactions.RCPT_TM.ToString().Substring(2, 2).ToString()));
+              update.Set("RECEIPT_SECONDS", (BsonValue) Convert.ToInt32(transactions.RCPT_TM.ToString().Substring(4, 2).ToString()));
+              update.Set("SHIFT_NO", (BsonValue) transactions.SHIFT_NO);
+              update.Set("BUSINESS_DT", (BsonValue) transactions.BUSINESS_DT);
+              update.Set("ITEM_CAT", (BsonValue) itemDetail.ITEM_CAT);
+              update.Set("ITEM_CODE", (BsonValue) itemDetail.ITEM_CODE);
+              update.Set("ITEM_NAME", (BsonValue) itemDetail.ITEM_NAME);
+              update.Set("ITEM_PRICE", (BsonValue) Convert.ToDouble(itemDetail.ITEM_PRICE));
+              update.Set("ITEM_QTY", (BsonValue) Convert.ToDouble(itemDetail.ITEM_QTY));
+              update.Set("ITEM_TAX", (BsonValue) Convert.ToDouble(itemDetail.ITEM_TAX));
+              update.Set("ITEM_NET_AMT", (BsonValue) Convert.ToDouble(itemDetail.ITEM_NET_AMT));
+              update.Set("BC_EXCH", (BsonValue) Convert.ToDouble(itemDetail.BC_EXCH));
+              update.Set("ITEM_TAX_TYPE", (BsonValue) itemDetail.ITEM_TAX_TYPE);
+              update.Set("OP_CUR", (BsonValue) itemDetail.OP_CUR);
+              update.Set("ITEM_STATUS", (BsonValue) itemDetail.ITEM_STATUS);
+              update.Set("TENANT_RECEIPT_ID", (BsonValue) (_strTenantID + itemDetail.RCPT_DT.ToString() + itemDetail.RCPT_NUM + itemDetail.ITEM_STATUS));
+              update.Set("CUM_STATUS", (BsonValue) 0);
+              update.Set("updated_at", (BsonValue) timestamp_);
+              if (itemDetail.GetType().GetProperty("DEPARTMENT") != (PropertyInfo) null)
+              {
+                if (itemDetail.DEPARTMENT != null)
+                  update.Set("DEPARTMENT", (BsonValue) itemDetail.DEPARTMENT.Trim());
+                else
+                  update.Set("DEPARTMENT", (BsonValue) null);
+              }
+              if (itemDetail.GetType().GetProperty("HSNCODE") != (PropertyInfo) null)
+              {
+                if (itemDetail.HSNCODE != null)
+                  update.Set("HSNCODE", (BsonValue) itemDetail.HSNCODE.Trim());
+                else
+                  update.Set("HSNCODE", (BsonValue) null);
+              }
+              if (itemDetail.GetType().GetProperty("SUBCATEGORY") != (PropertyInfo) null)
+              {
+                if (itemDetail.SUBCATEGORY != null)
+                  update.Set("SUBCATEGORY", (BsonValue) Convert.ToDateTime(itemDetail.SUBCATEGORY.Trim()));
+                else
+                  update.Set("SUBCATEGORY", (BsonValue) null);
+              }
+              if (itemDetail.GetType().GetProperty("SALESPERSON") != (PropertyInfo) null)
+              {
+                if (itemDetail.SALESPERSON != null)
+                  update.Set("SALESPERSON", (BsonValue) Convert.ToDateTime(itemDetail.SALESPERSON.Trim()));
+                else
+                  update.Set("SALESPERSON", (BsonValue) null);
+              }
+              if (itemDetail.GetType().GetProperty("IN_TIME") != (PropertyInfo) null)
+              {
+                if (itemDetail.IN_TIME != null && itemDetail.IN_TIME != "")
+                  update.Set("IN_TIME", (BsonValue) Convert.ToDateTime(itemDetail.IN_TIME.Trim()));
+                else
+                  update.Set("IN_TIME", (BsonValue) null);
+              }
+              if (itemDetail.GetType().GetProperty("OUT_TIME") != (PropertyInfo) null)
+              {
+                if (itemDetail.OUT_TIME != null && itemDetail.OUT_TIME != "")
+                  update.Set("OUT_TIME", (BsonValue) Convert.ToDateTime(itemDetail.OUT_TIME.Trim()));
+                else
+                  update.Set("OUT_TIME", (BsonValue) null);
+              }
+              Library.MonDatabase.GetCollection(strCollectionName).Update(query, (IMongoUpdate) update, UpdateFlags.Upsert);
+            }
+          }
+          break;
+        case "YES":
+          FrxTransactions frxTransactions = (FrxTransactions) tran;
+          foreach (FrxItemDetail frxItemDetail in frxTransactions.ItemDetail)
+          {
+            if (!(frxItemDetail.RCPT_NUM.Trim() == ""))
+            {
+              IMongoQuery query = Query.And(Query.EQ("SITE_ID", (BsonValue) Library._strSiteId), Query.EQ("TENANT_ID", (BsonValue) _strTenantID), Query.EQ("RECEIPT_DATE", (BsonValue) frxTransactions.RCPT_DT), Query.EQ("RECEIPT_NO", (BsonValue) frxItemDetail.RCPT_NUM), Query.EQ("RECEIPT_TIME", (BsonValue) frxTransactions.RCPT_TM), Query.EQ("ITEM_STATUS", (BsonValue) frxItemDetail.ITEM_STATUS), Query.EQ("PROD_TYPE", (BsonValue) frxItemDetail.PRD_TY), Query.EQ("TRAN_DESC", (BsonValue) frxItemDetail.TRS_DS), Query.EQ("FRX_AMOUNT", (BsonValue) Convert.ToDouble(frxItemDetail.FRN_AMT)), Query.EQ("LOC_DUE", (BsonValue) Convert.ToDouble(frxItemDetail.LOC_DUE)));
+              UpdateBuilder update = Update.Set("SITE_ID", (BsonValue) Library._strSiteId);
+              update.Set("TENANT_ID", (BsonValue) _strTenantID);
+              update.Set("POS_TILL", (BsonValue) frxTransactions.TERMINAL_ID);
+              update.Set("REC_TYPE", (BsonValue) frxItemDetail.REC_TYPE);
+              update.Set("RECEIPT_NO", (BsonValue) frxItemDetail.RCPT_NUM);
+              update.Set("RECEIPT_DATE", (BsonValue) Convert.ToInt32(frxItemDetail.RCPT_DT));
+              update.Set("RECEIPT_DAY", (BsonValue) Convert.ToInt32(frxItemDetail.RCPT_DT.Substring(6, 2).ToString()));
+              update.Set("RECEIPT_MONTH", (BsonValue) Convert.ToInt32(frxItemDetail.RCPT_DT.Substring(4, 2).ToString()));
+              update.Set("RECEIPT_YEAR", (BsonValue) Convert.ToInt32(frxItemDetail.RCPT_DT.Substring(0, 4).ToString()));
+              update.Set("RECEIPT_TIME", (BsonValue) frxTransactions.RCPT_TM);
+              update.Set("RECEIPT_HOUR", (BsonValue) Convert.ToInt32(frxTransactions.RCPT_TM.ToString().Substring(0, 2).ToString()));
+              update.Set("RECEIPT_MINUTE", (BsonValue) Convert.ToInt32(frxTransactions.RCPT_TM.ToString().Substring(2, 2).ToString()));
+              update.Set("RECEIPT_SECONDS", (BsonValue) Convert.ToInt32(frxTransactions.RCPT_TM.ToString().Substring(4, 2).ToString()));
+              update.Set("SHIFT_NO", (BsonValue) frxTransactions.SHIFT_NO);
+              update.Set("BUSINESS_DT", (BsonValue) frxTransactions.BUSINESS_DT);
+              update.Set("AC_HOLDER", (BsonValue) frxItemDetail.AC_HDR);
+              update.Set("AC_DESC", (BsonValue) frxItemDetail.AC_HDS);
+              update.Set("COM_CHARGE", (BsonValue) Convert.ToDouble(frxItemDetail.COM_CH));
+              update.Set("FEE_CHARGE", (BsonValue) Convert.ToDouble(frxItemDetail.FE_CH));
+              update.Set("FRX_AMOUNT", (BsonValue) Convert.ToDouble(frxItemDetail.FRN_AMT));
+              update.Set("FRX_RATE", (BsonValue) Convert.ToDouble(frxItemDetail.FX_RA));
+              update.Set("SNO", (BsonValue) Convert.ToInt32(frxItemDetail.SNO));
+              update.Set("LOC_AMOUNT", (BsonValue) Convert.ToDouble(frxItemDetail.LOC_AMT));
+              update.Set("LOC_DESC", (BsonValue) frxItemDetail.LOC_DS);
+              update.Set("LOC_DUE", (BsonValue) Convert.ToDouble(frxItemDetail.LOC_DUE));
+              update.Set("MRKT_RATE", (BsonValue) Convert.ToDouble(frxItemDetail.MAR_RT));
+              update.Set("PROD_TYPE", (BsonValue) frxItemDetail.PRD_TY);
+              update.Set("PROM_CODE", (BsonValue) frxItemDetail.PRM_CD);
+              update.Set("PROM_DESC", (BsonValue) frxItemDetail.PRM_NM);
+              update.Set("SITE_NAME", (BsonValue) frxItemDetail.S_NAM);
+              update.Set("TAX_AMOUNT", (BsonValue) Convert.ToDouble(frxItemDetail.TAX));
+              update.Set("TERMINAL_ID", (BsonValue) frxItemDetail.TIL_ID);
+              update.Set("UNIQ_ID", (BsonValue) frxItemDetail.UIN_ID);
+              update.Set("TRAN_DESC", (BsonValue) frxItemDetail.TRS_DS);
+              update.Set("ITEM_STATUS", (BsonValue) frxItemDetail.ITEM_STATUS);
+              update.Set("TENANT_RECEIPT_ID", (BsonValue) (_strTenantID + frxItemDetail.RCPT_DT.ToString() + frxItemDetail.RCPT_NUM + frxItemDetail.ITEM_STATUS));
+              update.Set("CUM_STATUS", (BsonValue) 0);
+              update.Set("updated_at", (BsonValue) timestamp_);
+              update.Set("NETSALES", (BsonValue) Convert.ToDouble(frxItemDetail.NETSALES));
+              Library.MonDatabase.GetCollection(strCollectionName).Update(query, (IMongoUpdate) update, UpdateFlags.Upsert);
+            }
+          }
+          break;
+      }
+    }
+    catch
+    {
+    }
+  }
+
+  private static void UpsertPaymentDetails(
+    PaymentDetail[] pay,
+    string RCPT_TM,
+    string TERMINAL_ID,
+    string SHIFT_NO,
+    string BUSINESS_DT,
+    string _strTenantID,
+    DateTime timestamp_,
+    string strCollectionName)
+  {
+    Regex regex = new Regex("^[0-9.]+$");
+    foreach (PaymentDetail paymentDetail in pay)
+    {
+      if (!(paymentDetail.RCPT_NUM.Trim() == ""))
+      {
+        IMongoQuery query = Query.And(Query.EQ("SITE_ID", (BsonValue) Library._strSiteId), Query.EQ("TENANT_ID", (BsonValue) _strTenantID), Query.EQ("RECEIPT_DATE", (BsonValue) Convert.ToInt32(paymentDetail.RCPT_DT)), Query.EQ("RECEIPT_NO", (BsonValue) paymentDetail.RCPT_NUM), Query.EQ("RECEIPT_TIME", (BsonValue) RCPT_TM), Query.EQ("PAYMENT_NAME", (BsonValue) paymentDetail.PAYMENT_NAME), Query.EQ("PAYMENT_STATUS", (BsonValue) paymentDetail.PAYMENT_STATUS), Query.EQ("TENDER_AMOUNT", (BsonValue) paymentDetail.TENDER_AMOUNT));
+        UpdateBuilder update = Update.Set("SITE_ID", (BsonValue) Library._strSiteId);
+        update.Set("TENANT_ID", (BsonValue) _strTenantID);
+        update.Set("POS_TILL", (BsonValue) TERMINAL_ID);
+        update.Set("REC_TYPE", (BsonValue) paymentDetail.REC_TYPE);
+        update.Set("RECEIPT_NO", (BsonValue) paymentDetail.RCPT_NUM);
+        update.Set("RECEIPT_DATE", (BsonValue) Convert.ToInt32(paymentDetail.RCPT_DT));
+        update.Set("RECEIPT_DAY", (BsonValue) Convert.ToInt32(paymentDetail.RCPT_DT.Substring(6, 2).ToString()));
+        update.Set("RECEIPT_MONTH", (BsonValue) Convert.ToInt32(paymentDetail.RCPT_DT.Substring(4, 2).ToString()));
+        update.Set("RECEIPT_YEAR", (BsonValue) Convert.ToInt32(paymentDetail.RCPT_DT.Substring(0, 4).ToString()));
+        update.Set("RECEIPT_TIME", (BsonValue) RCPT_TM);
+        update.Set("RECEIPT_HOUR", (BsonValue) Convert.ToInt32(RCPT_TM.ToString().Substring(0, 2).ToString()));
+        update.Set("RECEIPT_MINUTE", (BsonValue) Convert.ToInt32(RCPT_TM.ToString().Substring(2, 2).ToString()));
+        update.Set("RECEIPT_SECONDS", (BsonValue) Convert.ToInt32(RCPT_TM.ToString().Substring(4, 2).ToString()));
+        update.Set(nameof (SHIFT_NO), (BsonValue) SHIFT_NO);
+        update.Set(nameof (BUSINESS_DT), (BsonValue) BUSINESS_DT);
+        update.Set("PAYMENT_NAME", (BsonValue) paymentDetail.PAYMENT_NAME);
+        update.Set("CURRENCY_CODE", (BsonValue) paymentDetail.CURRENCY_CODE);
+        if (regex.IsMatch(paymentDetail.BC_EXCH))
+          update.Set("BC_EXCH", (BsonValue) Convert.ToDouble(paymentDetail.BC_EXCH));
+        else
+          update.Set("BC_EXCH", (BsonValue) 1);
+        if (regex.IsMatch(paymentDetail.TENDER_AMOUNT))
+          update.Set("TENDER_AMOUNT", (BsonValue) Convert.ToDouble(paymentDetail.TENDER_AMOUNT));
+        else
+          update.Set("TENDER_AMOUNT", (BsonValue) 1);
+        if (regex.IsMatch(paymentDetail.EXCHANGE_RATE))
+          update.Set("EXCHANGE_RATE", (BsonValue) Convert.ToDouble(paymentDetail.EXCHANGE_RATE));
+        else
+          update.Set("EXCHANGE_RATE", (BsonValue) 1);
+        update.Set("OP_CUR", (BsonValue) paymentDetail.OP_CUR);
+        update.Set("PAYMENT_STATUS", (BsonValue) paymentDetail.PAYMENT_STATUS);
+        update.Set("TENANT_RECEIPT_ID", (BsonValue) (_strTenantID + paymentDetail.RCPT_DT.ToString() + paymentDetail.RCPT_NUM + paymentDetail.PAYMENT_STATUS));
+        update.Set("CUM_STATUS", (BsonValue) 0);
+        update.Set("updated_at", (BsonValue) timestamp_);
+        Library.MonDatabase.GetCollection(strCollectionName).Update(query, (IMongoUpdate) update, UpdateFlags.Upsert);
+      }
+    }
+  }
+}
